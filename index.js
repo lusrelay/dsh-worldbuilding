@@ -1728,28 +1728,26 @@ export function apply(ctx) {
     }
   }), 'worldbuilding: rpc channel');
 
-  const tools = ctx.get('tools');
-  if (tools && typeof tools.register === 'function') {
+  ctx.inject(['tools'], (toolCtx) => {
     for (const definition of [toolList(), toolRead(), toolUpdate(), toolCreate()]) {
-      ctx.effect(() => tools.register(definition), `worldbuilding: tool ${definition.name}`);
+      toolCtx.effect(() => toolCtx.tools.register(definition), `worldbuilding: tool ${definition.name}`);
     }
-  }
+  });
 
-  const systemPrompt = ctx.get('systemPrompt');
-  if (systemPrompt && typeof systemPrompt.section === 'function') {
+  ctx.inject(['systemPrompt'], (promptCtx) => {
     const baseOrder = (() => {
       try {
-        return systemPrompt.getSectionOrder('TOOL_REPORT') + 10;
+        return promptCtx.systemPrompt.getSectionOrder('TOOL_REPORT') + 10;
       } catch {
         return 2910;
       }
     })();
-    ctx.effect(() => systemPrompt.section({
+    promptCtx.effect(() => promptCtx.systemPrompt.section({
       name: 'worldbuilding',
       order: baseOrder,
       text: () => worldbuildingPromptSection(),
     }), 'worldbuilding: prompt section');
-  }
+  });
 
   void refreshPromptCache();
 }

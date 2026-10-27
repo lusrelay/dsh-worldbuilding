@@ -27,7 +27,14 @@ function fakeStream() {
   })();
 }
 
+const toolsService = { register(definition) { tools.push(definition); return () => {}; } };
+const systemPromptService = {
+  section(section) { promptSection = section; return () => {}; },
+  getSectionOrder() { return 2900; },
+};
 const ctx = {
+  tools: toolsService,
+  systemPrompt: systemPromptService,
   connection: {
     rpc: {
       handle(channel, handler) {
@@ -37,16 +44,13 @@ const ctx = {
       },
     },
   },
+  inject(_deps, callback) {
+    callback(this);
+    return () => {};
+  },
   get(name) {
     if (name === 'llm') return { stream: fakeStream };
     if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'stub', model: 'stub-model' }) };
-    if (name === 'tools') return { register(definition) { tools.push(definition); return () => {}; } };
-    if (name === 'systemPrompt') {
-      return {
-        section(section) { promptSection = section; return () => {}; },
-        getSectionOrder() { return 2900; },
-      };
-    }
     return undefined;
   },
   effect(effect) {
