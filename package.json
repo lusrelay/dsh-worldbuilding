@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-worldbuilding",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "世界观工坊：多世界观隔离、重要角色/NPC 与角色图、角色关系与时间轴、AI 生成/对话补充、通用导入、纯文本与格式化导出。",
   "author": "lusrelay",
   "license": "MIT",

@@ -17,10 +17,12 @@ const { apply, internal } = await import('../index.js');
 
 let apiRoute = null;
 let modelReply = '';
+let lastModelOptions = null;
 const tools = [];
 let promptSection = null;
 
-function fakeStream() {
+function fakeStream(options) {
+  lastModelOptions = options;
   const text = modelReply;
   return (async function* stream() {
     yield { type: 'text-delta', index: 0, text };
@@ -51,7 +53,7 @@ const ctx = {
   },
   get(name) {
     if (name === 'llm') return { stream: fakeStream };
-    if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'stub', model: 'stub-model' }) };
+    if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'stub', model: 'stub-model', reasoningEffort: 'max' }) };
     return undefined;
   },
   effect(effect) {
@@ -255,6 +257,8 @@ check('生成地图标注', generated.world.map.markers.length === 1 && generate
 check('生成重要角色', generated.world.characters.length === 2 && generated.world.characters[0].name === '潮汐女王', generated.world.characters.map((item) => item.name));
 check('非人类物种保留', generated.world.characters[0].species === '潮灵' && generated.world.characters[0].nonHuman === true);
 check('生成角色关系按姓名解析', generated.world.characters[0].relations[0]?.targetId === generated.world.characters[1].id, generated.world.characters[0].relations);
+check('生成不设置输出 token 上限', Boolean(lastModelOptions) && lastModelOptions.maxTokens === undefined, Object.keys(lastModelOptions || {}));
+check('透传默认思考强度', lastModelOptions?.reasoningEffort === 'max', lastModelOptions?.reasoningEffort);
 
 console.log('\n[7] AI 对话补充');
 modelReply = JSON.stringify({

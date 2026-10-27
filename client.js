@@ -694,7 +694,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wb-busy-card' },
           h('div', { className: 'wb-busy-title' }, h('span', { className: 'wb-spinner' }), busy.label || '正在处理…'),
           h('div', { className: 'wb-busy-sub' }, busy.controller
-            ? `已用 ${elapsed}s。模型思考时可能不会立刻返回文字，请稍等；可以随时取消。`
+            ? `已用 ${elapsed}s。插件不限制思考额度，模型可能思考较久才会返回文字；可以继续等待，也可以随时取消。`
             : `已用 ${elapsed}s，请稍等…`),
           busy.controller
             ? h('div', { className: 'wb-busy-actions' }, h(Btn, { size: 'sm', onClick: onCancel }, '取消'))
@@ -2610,7 +2610,7 @@ window.__ModuleLoader__.load({
             onChange: (event) => setStyleHint(event.target.value),
           })),
         h('p', { className: 'wb-hint' },
-          '生成过程会调用「设置 → 模型」中的默认模型，可能需要几十秒到几分钟。生成后可以在各分页继续手改，或在 AI 助手里继续对话补充。')));
+          '生成过程会调用「设置 → 模型」中的默认模型。插件不限制思考 token，模型可能思考较久；可以随时取消。生成后可以在各分页继续手改，或在 AI 助手里继续对话补充。')));
     }
 
     function ImportDialog({ world, onClose, onSubmit }) {

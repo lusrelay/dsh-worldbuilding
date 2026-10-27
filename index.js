@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 
 export const inject = ['connection', 'webServer'];
 
-const BUILD = '1.1.1';
+const BUILD = '1.1.2';
 const SCHEMA = 'worldbuilding/2';
 const API_PREFIX = '/worldbuilding';
 const API_PATH = '/worldbuilding/api';
@@ -730,7 +730,8 @@ function selectionOf(ctx) {
   if (typeof provider !== 'string' || !provider || typeof model !== 'string' || !model) {
     throw new ModelError('worldbuilding/no-model', '还没有选择默认模型，请先在「设置 → 模型」里选择一个模型');
   }
-  return { provider, model };
+  const reasoningEffort = typeof selection?.reasoningEffort === 'string' ? selection.reasoningEffort : undefined;
+  return { provider, model, reasoningEffort };
 }
 
 async function runModel(ctx, options) {
@@ -738,7 +739,7 @@ async function runModel(ctx, options) {
   if (!llm || typeof llm.stream !== 'function') {
     throw new ModelError('worldbuilding/no-llm', '当前 Profile 没有加载 llm 服务，无法调用 AI');
   }
-  const { provider, model } = selectionOf(ctx);
+  const { provider, model, reasoningEffort } = selectionOf(ctx);
   const controller = new AbortController();
   const external = options.signal;
   let attached = false;
@@ -748,19 +749,21 @@ async function runModel(ctx, options) {
     else external.addEventListener('abort', onAbort, { once: true });
     attached = true;
   }
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 240000);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 600000);
   timer.unref?.();
 
   let text = '';
   let finish = null;
   let usage = null;
   try {
+    const hasTokenCap = Number.isFinite(options.maxTokens) && options.maxTokens > 0;
     const stream = llm.stream({
       provider,
       model,
       system: options.system,
       messages: [{ role: 'user', content: [{ type: 'text', text: options.prompt }] }],
-      maxTokens: options.maxTokens ?? 8192,
+      ...(hasTokenCap ? { maxTokens: options.maxTokens } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       temperature: options.temperature ?? 0.8,
       signal: controller.signal,
     });
@@ -791,7 +794,7 @@ async function runModel(ctx, options) {
   }
   if (!text.trim()) {
     if (finish?.kind === 'max-tokens') {
-      throw new ModelError('worldbuilding/truncated', '模型的输出额度被思考内容耗尽，没有留下正文。请重试，或把要求写得更短一些');
+      throw new ModelError('worldbuilding/truncated', '模型思考时间较长，本次回复被截断。已不限制输出的思考额度，请重试；如果反复出现，可以把本次要求写短一些');
     }
     throw new ModelError('worldbuilding/empty', '模型没有返回内容，请重试');
   }
@@ -1623,9 +1626,9 @@ function exportWorld(world, format, includeChat = false) {
 /* --------------------------------------------------------------- AI 任务 */
 
 function scaleLimit(scale) {
-  if (scale === 'brief') return { maxTokens: 4096, hint: '篇幅偏简要：每个字段 1-2 句，总字数控制在 2500 字以内。' };
-  if (scale === 'deep') return { maxTokens: 16384, hint: '篇幅详尽：每个字段写到 3-5 句，事件与条目可以多一些，总字数 6000-9000 字。' };
-  return { maxTokens: 8192, hint: '篇幅标准：每个字段 2-3 句，总字数 3500-5000 字。' };
+  if (scale === 'brief') return { hint: '篇幅偏简要：每个字段 1-2 句，总字数控制在 2500 字以内。' };
+  if (scale === 'deep') return { hint: '篇幅详尽：每个字段写到 3-5 句，事件与条目可以多一些，总字数 6000-9000 字。' };
+  return { hint: '篇幅标准：每个字段 2-3 句，总字数 3500-5000 字。' };
 }
 
 async function generateWorld(ctx, payload, signal) {
@@ -1648,7 +1651,6 @@ async function generateWorld(ctx, payload, signal) {
   const out = await runModel(ctx, {
     system,
     prompt: parts.join('\n\n'),
-    maxTokens: scale.maxTokens,
     temperature: 0.85,
     signal,
   });
@@ -1678,7 +1680,6 @@ async function importWorld(ctx, payload, signal) {
   const out = await runModel(ctx, {
     system: IMPORT_SYSTEM,
     prompt: `${base ? `已有世界观（导入内容将合并进去）：\n${compactWorld(base, 8000)}\n\n` : ''}请整理以下资料：\n<<<\n${text}\n>>>`,
-    maxTokens: 8192,
     temperature: 0.3,
     signal,
   });
@@ -1724,7 +1725,6 @@ async function chatWorld(ctx, payload, signal) {
       `用户的新消息：\n${message}`,
       '只输出 JSON 对象。',
     ].join('\n\n'),
-    maxTokens: 6144,
     temperature: 0.7,
     signal,
   });
@@ -1977,7 +1977,6 @@ async function integrateTimelineAi(ctx, payload, signal) {
   const out = await runModel(ctx, {
     system: AI_TIMELINE_SYSTEM,
     prompt: `请为以下世界观整合时间轴事实：\n${JSON.stringify(context)}\n只输出 JSON 对象。`,
-    maxTokens: 8192,
     temperature: 0.3,
     signal,
   });
