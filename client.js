@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
     const { useState, useEffect, useRef, useCallback } = React;
 
-    const API_CHANNEL = '/worldbuilding';
+    const API_URL = '/worldbuilding/api';
     const TABS = [
       { key: 'overview', label: '概览', glyph: '◈' },
       { key: 'type', label: '世界类型', glyph: '✦' },
@@ -60,8 +60,8 @@ window.__ModuleLoader__.load({
 .wb-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;border:.5px solid var(--wb-line-strong);background:transparent;color:var(--wb-text);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,opacity .15s}
 .wb-btn:hover:not(:disabled){background:var(--wb-card)}
 .wb-btn:disabled{opacity:.45;cursor:default}
-.wb-btn--primary{background:var(--wb-accent);border-color:transparent;color:#fff;font-weight:500}
-.wb-btn--primary:hover:not(:disabled){filter:brightness(1.08);background:var(--wb-accent)}
+.wb-btn--primary{background:var(--dsw-alias-bg-layer-2,rgba(128,128,128,.16));border-color:transparent;color:var(--wb-text);font-weight:500}
+.wb-btn--primary:hover:not(:disabled){filter:brightness(1.06);background:var(--dsw-alias-bg-layer-2,rgba(128,128,128,.16))}
 .wb-btn--ghost{border-color:transparent;color:var(--wb-dim)}
 .wb-btn--ghost:hover:not(:disabled){color:var(--wb-text)}
 .wb-btn--danger{color:var(--wb-danger);border-color:transparent}
@@ -784,7 +784,7 @@ window.__ModuleLoader__.load({
 
     /* --------------------------------------------------------------- 页面 */
 
-    function WorldbuildingPage({ connection }) {
+    function WorldbuildingPage() {
       const [state, setState] = useState({ worlds: [], activeId: null, dataDir: '' });
       const [world, setWorld] = useState(null);
       const [loaded, setLoaded] = useState(false);
@@ -829,18 +829,39 @@ window.__ModuleLoader__.load({
       }, []);
 
       const request = useCallback(async (action, payload, signal) => {
-        let result;
+        let response;
         try {
-          result = await connection.rpc.call(API_CHANNEL, action, payload || {}, signal);
+          response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action, payload: payload || {} }),
+            credentials: 'same-origin',
+            signal,
+          });
         } catch (error) {
           if (error?.name === 'AbortError') {
             const aborted = new Error('已取消');
             aborted.code = 'worldbuilding/aborted';
             throw aborted;
           }
-          throw new Error(`无法连接世界观工坊服务：${error?.message || error}`);
+          throw new Error(`无法连接世界观工坊本地接口：${error?.message || error}`);
         }
-        if (!result || typeof result !== 'object') throw new Error('世界观工坊没有返回结果');
+        const text = await response.text();
+        let result = null;
+        try {
+          result = text ? JSON.parse(text) : null;
+        } catch {
+          result = null;
+        }
+        if (!response.ok) {
+          const failure = new Error(response.status === 401
+            ? '登录会话已失效，请重新打开 DSH Web 后再试'
+            : (result?.error?.message || `本地接口返回 HTTP ${response.status}`));
+          failure.code = result?.error?.code || `http-${response.status}`;
+          failure.details = result?.error?.details || {};
+          throw failure;
+        }
+        if (!result || typeof result !== 'object') throw new Error('世界观工坊本地接口没有返回 JSON');
         if (!result.ok) {
           const failure = new Error(result.error?.message || '操作失败');
           failure.code = result.error?.code || '';
@@ -848,7 +869,7 @@ window.__ModuleLoader__.load({
           throw failure;
         }
         return result.value;
-      }, [connection]);
+      }, []);
 
       const applyWorld = useCallback((data) => {
         if (!data?.world) return;
@@ -2822,7 +2843,7 @@ window.__ModuleLoader__.load({
       h('path', { d: 'M16.6 3.6l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z', fill: 'currentColor' }));
     }
 
-    const inject = ['slots', 'locale', 'connection'];
+    const inject = ['slots', 'locale'];
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register('worldbuilding', {
@@ -2835,7 +2856,7 @@ window.__ModuleLoader__.load({
         key: 'worldbuilding',
         locale: 'worldbuilding',
       }, function MainEntry() {
-        return h(WorldbuildingPage, { connection: ctx.connection });
+        return h(WorldbuildingPage);
       }));
 
       ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({

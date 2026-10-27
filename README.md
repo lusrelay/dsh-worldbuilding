@@ -4,6 +4,15 @@ DSH（DeepSeek Harness）Web 端的整页世界观管理插件。仓库：[lusre
 
 > 无构建、零运行时依赖：Host 是 ESM，Client 用 `window.__ModuleLoader__.load` 包一层 React，不需要 JSX、打包器或额外 npm 包。
 
+## 本地服务与文件模式
+
+- Host 半身通过 `ctx.webServer.register('/worldbuilding')` 暴露专用的本地接口 `/worldbuilding/api`，不启动额外端口、不启动外部服务进程；
+- 浏览器半身只用 `fetch('/worldbuilding/api', { method: 'POST' })` 发 JSON 请求；世界观、角色、关系、地图与角色图仍然只落在本机 `$DSH_HOME/worldbuilding/` 文件里；
+- 接口使用 DSH 的 `connection.requestRejection` 校验 Host/Origin 与浏览器 Cookie；未登录请求返回 401，不会把数据暴露给任意网页；
+- v1.1.0 使用通用的 `connection.rpc` 通道，但 DSHA 当前 Profile 的 connection 上下文没有注入 `webServer`，Host apply 会失败、接口返回 405。v1.1.1 改为专用本地路由，已通过第二实例的真实 HTTP 验证。
+
+> 如果界面提示「无法连接世界观工坊本地接口」或 HTTP 405，请确认安装的是 **v1.1.1 或更新版本**，重新导入 zip 后重启 DSHA Web；HTTP 401 表示 Web 会话失效，重新打开 DSH Web 的带 token 地址即可。
+
 ## 界面预览
 
 | 概览 | 重大事件 |
@@ -27,6 +36,12 @@ DSH（DeepSeek Harness）Web 端的整页世界观管理插件。仓库：[lusre
 | ![移动端](screenshots/14-mobile-overview.png) | ![暗色](screenshots/12-overview-dark.png) |
 
 > 预览由真实 React 在独立浏览器中渲染，使用与宿主相同的 `--dsw-alias-*` 主题 token；实际安装后的侧栏与面板边框由 Harness 提供。
+
+| 实机侧栏（亮色） | 实机侧栏（暗色） |
+| --- | --- |
+| ![实机亮色](screenshots/26-real-host-light.png) | ![实机暗色](screenshots/27-real-host-dark.png) |
+
+> v1.1.1 在真实 DSH Web 实例中验证：侧栏入口、`/worldbuilding/api` POST 200、空状态无错误提示。暗色下主按钮使用宿主 `bg-layer-2` + 文本色，避免 v1.1.0 的「白底白字」。
 
 ## 功能
 

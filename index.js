@@ -4,7 +4,7 @@
  * 职责：
  *  - 每个世界观一个独立 JSON 文件（worlds/<id>.json），互不干扰；
  *  - 统一的世界观 schema、排序、清洗、导入合并与导出格式化；
- *  - 通过 ctx.connection.rpc 暴露 /worldbuilding 通道（自带浏览器鉴权与 Host fence）；
+ *  - 通过 ctx.webServer 暴露本地 /worldbuilding/api（浏览器鉴权 + 本地文件存储，无外部服务）；
  *  - 通过 ctx.llm + agentDefaultModel 调用当前默认模型：一次性生成、对话补充、通用格式导入；
  *  - 向 Agent 注册 worldbuilding_* 工具，并在系统提示词里说明用法。
  */
@@ -13,11 +13,13 @@ import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export const inject = ['connection'];
+export const inject = ['connection', 'webServer'];
 
-const BUILD = '1.1.0';
+const BUILD = '1.1.1';
 const SCHEMA = 'worldbuilding/2';
-const RPC_CHANNEL = '/worldbuilding';
+const API_PREFIX = '/worldbuilding';
+const API_PATH = '/worldbuilding/api';
+const API_BODY_LIMIT = 16 * 1024 * 1024;
 
 const DSH_HOME = process.env.DSH_HOME && process.env.DSH_HOME.trim()
   ? process.env.DSH_HOME.trim()
@@ -2518,23 +2520,110 @@ async function route(ctx, endpoint, payload, signal) {
   }
 }
 
+/* --------------------------------------------------------------- 本地 HTTP */
+
+function sendJson(res, status, payload) {
+  if (res.writableEnded) return;
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > API_BODY_LIMIT) throw new Error('请求体过大');
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new Error('请求体不是合法 JSON');
+  }
+}
+
+async function executeEndpoint(ctx, endpoint, payload, signal) {
+  try {
+    const value = await route(ctx, endpoint, payload, signal);
+    return { ok: true, value };
+  } catch (error) {
+    const code = error?.code && typeof error.code === 'string' ? error.code : 'worldbuilding/failure';
+    const message = error?.message ? String(error.message) : '世界观工坊操作失败';
+    const details = error?.details && typeof error.details === 'object' ? error.details : {};
+    if (!(error instanceof AppError) && !(error instanceof ModelError)) {
+      ctx.logger?.warn?.(`[worldbuilding] ${endpoint}: ${message}`);
+    }
+    return { ok: false, error: { code, message, details } };
+  }
+}
+
 /* ------------------------------------------------------------------- 应用 */
 
 export function apply(ctx) {
-  ctx.effect(() => ctx.connection.rpc.handle(RPC_CHANNEL, async (endpoint, payload, signal) => {
-    try {
-      const value = await route(ctx, endpoint, payload, signal);
-      return { ok: true, value };
-    } catch (error) {
-      const code = error?.code && typeof error.code === 'string' ? error.code : 'worldbuilding/failure';
-      const message = error?.message ? String(error.message) : '世界观工坊操作失败';
-      const details = error?.details && typeof error.details === 'object' ? error.details : {};
-      if (!(error instanceof AppError) && !(error instanceof ModelError)) {
-        ctx.logger?.warn?.(`[worldbuilding] ${endpoint}: ${message}`);
+  const apiRoute = {
+    kind: 'prefix',
+    path: API_PREFIX,
+    async handler(req, res) {
+      try {
+        const url = new URL(req.url || '/', 'http://localhost');
+        const allowedPath = url.pathname === API_PATH || url.pathname === `${API_PATH}/`;
+        if (!allowedPath) {
+          sendJson(res, 404, { ok: false, error: { code: 'worldbuilding/not-found', message: '未知接口', details: {} } });
+          return;
+        }
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'cache-control': 'no-store' });
+          res.end();
+          return;
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'POST' });
+          res.end('method not allowed');
+          return;
+        }
+        if (typeof ctx.connection?.requestRejection === 'function') {
+          const rejection = ctx.connection.requestRejection(req);
+          if (rejection !== undefined) {
+            res.writeHead(rejection, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end(rejection === 401 ? 'unauthorized' : 'forbidden');
+            return;
+          }
+        }
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: { code: 'worldbuilding/bad-body', message: error?.message || '请求体错误', details: {} } });
+          return;
+        }
+        const action = typeof body.action === 'string' ? body.action : (url.searchParams.get('action') || 'state');
+        const payload = body.payload && typeof body.payload === 'object' ? body.payload : body;
+        const controller = new AbortController();
+        const onClose = () => { if (!res.writableEnded) controller.abort(); };
+        res.on('close', onClose);
+        try {
+          const result = await executeEndpoint(ctx, action, payload, controller.signal);
+          sendJson(res, 200, result);
+        } finally {
+          res.off('close', onClose);
+        }
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: { code: 'worldbuilding/transport', message: error?.message || '本地接口错误', details: {} },
+        });
       }
-      return { ok: false, error: { code, message, details } };
-    }
-  }), 'worldbuilding: rpc channel');
+    },
+  };
+
+  ctx.effect(() => ctx.webServer.register(apiRoute), 'worldbuilding: /worldbuilding/api');
 
   ctx.inject(['tools'], (toolCtx) => {
     for (const definition of [toolList(), toolRead(), toolUpdate(), toolCreate()]) {

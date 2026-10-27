@@ -1,11 +1,12 @@
 /**
- * 世界观工坊 Host 离线自测：临时 DSH_HOME、桩模型，用真实 RPC handler 跑完整业务流程。
+ * 世界观工坊 Host 离线自测：临时 DSH_HOME、桩模型，用真实本地 HTTP handler 跑完整业务流程。
  * 运行：node tests/host.test.mjs
  */
 import { mkdtempSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 
 const TEST_HOME = mkdtempSync(join(tmpdir(), 'wb-host-'));
 process.env.DSH_HOME = TEST_HOME;
@@ -14,7 +15,7 @@ console.log(`临时 DSH_HOME：${TEST_HOME}`);
 
 const { apply, internal } = await import('../index.js');
 
-let rpcHandler = null;
+let apiRoute = null;
 let modelReply = '';
 const tools = [];
 let promptSection = null;
@@ -36,12 +37,12 @@ const ctx = {
   tools: toolsService,
   systemPrompt: systemPromptService,
   connection: {
-    rpc: {
-      handle(channel, handler) {
-        if (channel !== '/worldbuilding') throw new Error(`unexpected channel ${channel}`);
-        rpcHandler = handler;
-        return () => {};
-      },
+    requestRejection() { return undefined; },
+  },
+  webServer: {
+    register(route) {
+      apiRoute = route;
+      return () => {};
     },
   },
   inject(_deps, callback) {
@@ -61,7 +62,7 @@ const ctx = {
 };
 
 apply(ctx);
-if (!rpcHandler) throw new Error('RPC handler 没有注册');
+if (!apiRoute) throw new Error('本地 HTTP 路由没有注册');
 if (tools.length !== 4) throw new Error(`应注册 4 个工具，实际 ${tools.length}`);
 console.log(`已注册工具：${tools.map((tool) => tool.name).join(', ')}`);
 
@@ -74,8 +75,37 @@ function check(name, condition, extra) {
   }
 }
 
+async function callApi(endpoint, payload = {}) {
+  const request = Readable.from([Buffer.from(JSON.stringify({ action: endpoint, payload }))]);
+  request.method = 'POST';
+  request.url = '/worldbuilding/api';
+  request.headers = { host: '127.0.0.1' };
+  const chunks = [];
+  const response = {
+    writableEnded: false,
+    status: 200,
+    writeHead(status) { this.status = status; return this; },
+    end(body) {
+      if (body !== undefined) chunks.push(Buffer.isBuffer(body) ? body : Buffer.from(String(body)));
+      this.writableEnded = true;
+    },
+    on() { return this; },
+    off() { return this; },
+  };
+  await apiRoute.handler(request, response);
+  const text = Buffer.concat(chunks).toString('utf8');
+  let result;
+  try {
+    result = JSON.parse(text);
+  } catch {
+    throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+  }
+  if (!result || typeof result !== 'object') throw new Error(`HTTP ${response.status}: invalid JSON`);
+  return result;
+}
+
 async function rpc(endpoint, payload = {}) {
-  const result = await rpcHandler(endpoint, payload, new AbortController().signal, {});
+  const result = await callApi(endpoint, payload);
   if (!result.ok) {
     const error = new Error(result.error.message);
     error.code = result.error.code;
@@ -86,7 +116,7 @@ async function rpc(endpoint, payload = {}) {
 }
 
 async function rpcError(endpoint, payload = {}) {
-  const result = await rpcHandler(endpoint, payload, new AbortController().signal, {});
+  const result = await callApi(endpoint, payload);
   return result.ok ? null : result.error;
 }
 

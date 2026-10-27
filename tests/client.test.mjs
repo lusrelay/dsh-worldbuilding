@@ -106,7 +106,7 @@ console.log('\n[1] 槽位注册');
 check('注册两个槽位', registered.length === 2, registered.map((row) => row.key));
 check('main key = worldbuilding', registered.some((row) => row.key === 'main' && row.options.key === 'worldbuilding'));
 check('侧栏 id = worldbuilding', registered.some((row) => row.key === 'sidebar.panellist' && row.options.id === 'worldbuilding'));
-check('注入 connection', captured.module.inject.includes('connection'));
+check('注入 slots/locale', captured.module.inject.includes('slots') && captured.module.inject.includes('locale'));
 
 const world = {
   schema: 'worldbuilding/1',
