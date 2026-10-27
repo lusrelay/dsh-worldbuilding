@@ -1528,6 +1528,7 @@ function toolCreate() {
           index.activeId = before && before !== inserted.id ? before : index.activeId;
           await saveIndex(index);
         });
+        await refreshPromptCache();
       }
       return { id: inserted.id, name: inserted.name, activeId: (await loadIndex()).activeId };
     },
@@ -1562,6 +1563,7 @@ async function refreshPromptCache() {
 }
 
 function worldbuildingPromptSection() {
+  if (!promptCache.activeId) return '';
   return `【世界观工坊】
 用户可以在「世界观工坊」里管理多个彼此隔离的世界观。需要读取或补充世界观时，使用这些工具：
 - worldbuilding_list：列出全部世界观；

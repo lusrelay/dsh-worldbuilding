@@ -711,6 +711,41 @@ window.__ModuleLoader__.load({
         else scheduleSaveRef.current?.();
       }, []);
 
+      const syncFromServer = useCallback(async () => {
+        if (dirtyRef.current || savingRef.current || busy || aiPending) return;
+        try {
+          const data = await request('state');
+          setState(data);
+          if (!data.activeId) {
+            setWorld(null);
+            worldRef.current = null;
+            revRef.current = 0;
+            setMapUrl('');
+            setDirty(false);
+            dirtyRef.current = false;
+            return;
+          }
+          const full = await request('world/get', { id: data.activeId });
+          if (data.activeId !== worldRef.current?.id || Number(full.rev) !== Number(revRef.current)) {
+            setWorld(full.world);
+            worldRef.current = full.world;
+            revRef.current = Number(full.rev ?? 0);
+            setDirty(false);
+            dirtyRef.current = false;
+            if (full.state) setState(full.state);
+            await loadMapFor(full.world);
+          }
+        } catch {
+          /* 静默同步失败不影响手头编辑 */
+        }
+      }, [request, busy, aiPending, loadMapFor]);
+
+      useEffect(() => {
+        const onFocus = () => { void syncFromServer(); };
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+      }, [syncFromServer]);
+
       const flushSave = useCallback(async () => {
         for (let attempt = 0; attempt < 40; attempt += 1) {
           if (!dirtyRef.current) return true;
@@ -1132,11 +1167,11 @@ window.__ModuleLoader__.load({
             })),
         menu ? h('div', { className: 'wb-menu-mask', onMouseDown: () => setMenu(false) }) : null,
         menu ? h('div', { className: 'wb-menu', role: 'menu' },
-          h('button', { type: 'button', className: 'wb-menu-item', onClick: () => openModal({ kind: 'rename' }) }, '重命名当前世界观'),
+          world ? h('button', { type: 'button', className: 'wb-menu-item', onClick: () => openModal({ kind: 'rename' }) }, '重命名当前世界观') : null,
           h('button', { type: 'button', className: 'wb-menu-item', onClick: refresh }, '刷新数据'),
           h('button', { type: 'button', className: 'wb-menu-item', onClick: () => { setMenu(false); toast(state.dataDir ? `数据目录：${state.dataDir}` : '数据存放在 DSH_HOME/worldbuilding'); } }, '查看数据目录'),
-          h('div', { className: 'wb-menu-sep' }),
-          h('button', { type: 'button', className: 'wb-menu-item wb-menu-item--danger', onClick: () => openModal({ kind: 'confirm', title: `删除《${world?.name || ''}》？`, description: '会永久删除这个世界观的 JSON 文件、地图图片与全部内容，其他世界观不受影响。', confirmText: '删除', danger: true, onConfirm: deleteCurrent }) }, '删除当前世界观'))
+          world ? h('div', { className: 'wb-menu-sep' }) : null,
+          world ? h('button', { type: 'button', className: 'wb-menu-item wb-menu-item--danger', onClick: () => openModal({ kind: 'confirm', title: `删除《${world.name}》？`, description: '会永久删除这个世界观的 JSON 文件、地图图片与全部内容，其他世界观不受影响。', confirmText: '删除', danger: true, onConfirm: deleteCurrent }) }, '删除当前世界观') : null)
           : null,
         h(Toast, { toast: toastState }),
         busy ? h(BusyOverlay, { busy, onCancel: cancelBusy }) : null,
