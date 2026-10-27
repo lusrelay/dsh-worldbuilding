@@ -454,9 +454,12 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wb-busy', role: 'status', 'aria-live': 'polite' },
         h('div', { className: 'wb-busy-card' },
           h('div', { className: 'wb-busy-title' }, h('span', { className: 'wb-spinner' }), busy.label || '正在处理…'),
-          h('div', { className: 'wb-busy-sub' }, `已用 ${elapsed}s。模型思考时可能不会立刻返回文字，请稍等；可以随时取消。`),
-          h('div', { className: 'wb-busy-actions' },
-            h(Btn, { size: 'sm', onClick: onCancel }, '取消'))));
+          h('div', { className: 'wb-busy-sub' }, busy.controller
+            ? `已用 ${elapsed}s。模型思考时可能不会立刻返回文字，请稍等；可以随时取消。`
+            : `已用 ${elapsed}s，请稍等…`),
+          busy.controller
+            ? h('div', { className: 'wb-busy-actions' }, h(Btn, { size: 'sm', onClick: onCancel }, '取消'))
+            : null));
     }
 
     function Modal({ title, description, children, footer, onClose, wide = false }) {
@@ -871,6 +874,7 @@ window.__ModuleLoader__.load({
           worldRef.current = data.world;
           revRef.current = Number(data.rev ?? revRef.current);
           setMapUrl(data.dataUrl || '');
+          try { setState(await request('state')); } catch { /* 摘要同步失败不影响地图 */ }
           toast('地图已更新');
         } catch (error) {
           toast(error.message || '上传失败', 'error');
@@ -888,6 +892,7 @@ window.__ModuleLoader__.load({
           worldRef.current = data.world;
           revRef.current = Number(data.rev ?? revRef.current);
           setMapUrl('');
+          try { setState(await request('state')); } catch { /* 摘要同步失败不影响地图 */ }
           toast('地图已移除');
         } catch (error) {
           toast(error.message || '移除失败', 'error');
@@ -1022,6 +1027,13 @@ window.__ModuleLoader__.load({
             setDirty(false);
             dirtyRef.current = false;
             await loadMapFor(full.world);
+          } else {
+            setWorld(null);
+            worldRef.current = null;
+            revRef.current = 0;
+            setMapUrl('');
+            setDirty(false);
+            dirtyRef.current = false;
           }
           toast('已刷新');
         } catch (error) {

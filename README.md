@@ -1,6 +1,6 @@
 # 世界观工坊 · DSH Worldbuilding Studio
 
-DSH（DeepSeek Harness）Web 端的整页世界观管理插件。多个世界观彼此隔离，每个世界观独立落盘；支持 AI 一次性生成、对话式增量补充、任意格式资料导入、纯文本 / Markdown / JSON 导出，以及主对话里的 Agent 工具直接读写当前世界观。
+DSH（DeepSeek Harness）Web 端的整页世界观管理插件。仓库：[lusrelay/dsh-worldbuilding](https://github.com/lusrelay/dsh-worldbuilding)。多个世界观彼此隔离，每个世界观独立落盘；支持 AI 一次性生成、对话式增量补充、任意格式资料导入、纯文本 / Markdown / JSON 导出，以及主对话里的 Agent 工具直接读写当前世界观。
 
 > 无构建、零运行时依赖：Host 是 ESM，Client 用 `window.__ModuleLoader__.load` 包一层 React，不需要 JSX、打包器或额外 npm 包。
 
@@ -42,7 +42,7 @@ DSHA 要求第三方插件由用户完成原生审阅，所以不通过命令行
    zip -r dsh-worldbuilding.zip index.js client.js cordis.patch.yml package.json icon.svg locale README.md LICENSE
    ```
 
-   或从 GitHub Release 下载 zip。
+   或从 [Releases](https://github.com/lusrelay/dsh-worldbuilding/releases/latest) 下载 `dsh-worldbuilding.zip`。
 2. 打开 DSHA → 底部「插件」→「插件管理」→「导入压缩包」→ 选中 zip。
 3. 核对作者 / 版本 / 依赖后确认安装；若列表显示「待审阅 / 已停用」，点它并「审阅 / 启用」。
 4. 重启 DSHA Web 后，左侧栏出现「世界观工坊」。
