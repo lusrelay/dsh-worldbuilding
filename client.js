@@ -550,6 +550,7 @@ window.__ModuleLoader__.load({
 
     async function compressPortrait(file) {
       if (!file || !String(file.type || '').startsWith('image/')) throw new Error('请选择图片文件');
+      if (file.size > 15 * 1024 * 1024) throw new Error('图片过大，请选择 15MB 以内的图片');
       const original = await readDataUrl(file);
       try {
         const image = await loadImageElement(original);
