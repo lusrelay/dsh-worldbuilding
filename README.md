@@ -52,7 +52,7 @@ DSHA 要求第三方插件由用户完成原生审阅，所以不通过命令行
    zip -r dsh-worldbuilding.zip index.js client.js cordis.patch.yml package.json icon.svg locale README.md LICENSE
    ```
 
-   或从 [Releases](https://github.com/lusrelay/dsh-worldbuilding/releases/latest) 下载 `dsh-worldbuilding.zip`。
+   或从 [Releases](https://github.com/lusrelay/dsh-worldbuilding/releases/latest) 下载最新的 `dsh-worldbuilding-*.zip`。
 2. 打开 DSHA → 底部「插件」→「插件管理」→「导入压缩包」→ 选中 zip。
 3. 核对作者 / 版本 / 依赖后确认安装；若列表显示「待审阅 / 已停用」，点它并「审阅 / 启用」。
 4. 重启 DSHA Web 后，左侧栏出现「世界观工坊」。
