@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
 .wb-body{flex:1;min-height:0;display:flex;overflow:hidden}
 .wb-scroll{flex:1;min-height:0;overflow:auto;padding:16px clamp(12px,2.6vw,26px) 40px;scrollbar-width:thin}
 .wb-narrow{max-width:900px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:12px}
-.wb-wide{max-width:1180px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:12px}
+.wb-wide{max-width:1040px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:12px}
 .wb-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;border:.5px solid var(--wb-line-strong);background:transparent;color:var(--wb-text);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,opacity .15s}
 .wb-btn:hover:not(:disabled){background:var(--wb-card)}
 .wb-btn:disabled{opacity:.45;cursor:default}
@@ -213,8 +213,12 @@ window.__ModuleLoader__.load({
 .wb-headactions{margin-left:0;width:100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
 .wb-headactions::-webkit-scrollbar{display:none}
 .wb-tabs{margin-top:8px}
-.wb-tab{padding:8px 9px;font-size:12.5px;border-radius:8px 8px 0 0}
+.wb-tabs{flex-wrap:wrap;overflow:visible;row-gap:2px}
+.wb-tab{padding:7px 8px;font-size:12px;border-radius:8px 8px 0 0}
 .wb-tab-glyph{display:none}
+.wb-ai-head{padding:8px 12px}
+.wb-ai-head .wb-hint{display:none}
+.wb-ai-head b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb-hero{flex-direction:column;gap:12px;padding:14px}
 .wb-hero-side{flex:1 1 auto;max-width:100%;width:100%}
 .wb-grid2,.wb-formrow{grid-template-columns:1fr}
@@ -860,6 +864,7 @@ window.__ModuleLoader__.load({
         }
         setBusy({ label: '正在上传地图…', start: Date.now() });
         try {
+          await flushSave();
           const dataUrl = await readDataUrl(file);
           const data = await request('world/map/upload', { id: worldRef.current.id, dataUrl });
           setWorld(data.world);
@@ -872,11 +877,12 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(null);
         }
-      }, [request, toast]);
+      }, [flushSave, request, toast]);
 
       const removeMap = useCallback(async () => {
         setBusy({ label: '正在移除地图…', start: Date.now() });
         try {
+          await flushSave();
           const data = await request('world/map/remove', { id: worldRef.current.id });
           setWorld(data.world);
           worldRef.current = data.world;
@@ -888,7 +894,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(null);
         }
-      }, [request, toast]);
+      }, [flushSave, request, toast]);
 
       const sendAi = useCallback(async () => {
         const text = aiInput.trim();
@@ -1035,7 +1041,12 @@ window.__ModuleLoader__.load({
         busy?.controller?.abort();
       }, [busy]);
 
-      const panelProps = { world, mutate, openEntry, removeEntry, moveTimeline, openGenerate, onExport: () => openModal({ kind: 'export' }), onGo: setTab };
+      const openExport = useCallback(async () => {
+        await flushSave();
+        openModal({ kind: 'export' });
+      }, [flushSave, openModal]);
+
+      const panelProps = { world, mutate, openEntry, removeEntry, moveTimeline, openGenerate, onExport: openExport, onGo: setTab };
 
       const renderPanel = () => {
         if (!world) return null;
@@ -1092,7 +1103,7 @@ window.__ModuleLoader__.load({
           onNew: () => openModal({ kind: 'create' }),
           onGenerate: () => openGenerate('new'),
           onImport: () => openModal({ kind: 'import' }),
-          onExport: () => openModal({ kind: 'export' }),
+          onExport: openExport,
           onMenu: () => setMenu((value) => !value),
           saving,
           dirty,
@@ -1288,14 +1299,13 @@ window.__ModuleLoader__.load({
             title: '当前时代',
             desc: '时间线决定时代。先写清「现在是什么时代、技术或力量到了哪一步、社会是什么状态」，再划分历史时代。',
           },
-          h('div', { className: 'wb-formrow' },
-            h(Field, { label: '时代名称' },
-              h('input', {
-                className: 'wb-input',
-                value: world.era,
-                placeholder: '例如：第三纪元 · 灰烬历 1200 年',
-                onChange: (event) => mutate((draft) => { draft.era = event.target.value; }),
-              }))),
+          h(Field, { label: '时代名称' },
+            h('input', {
+              className: 'wb-input',
+              value: world.era,
+              placeholder: '例如：第三纪元 · 灰烬历 1200 年',
+              onChange: (event) => mutate((draft) => { draft.era = event.target.value; }),
+            })),
           h(Field, { label: '时代说明', hint: '现在正在发生什么？普通人感受到的变化是什么？' },
             h('textarea', {
               className: 'wb-area',
@@ -1317,7 +1327,7 @@ window.__ModuleLoader__.load({
             })
             : world.timeline.map((item, index) => h('div', { key: item.id, className: 'wb-row' },
               h('div', { className: 'wb-row-main' },
-                h('div', { className: 'wb-row-title' }, item.name, item.span ? h('span', null, item.span) : null),
+                h('div', { className: 'wb-row-title' }, item.name, item.span ? h('span', null, `· ${item.span}`) : null),
                 item.description ? h('div', { className: 'wb-row-desc' }, item.description) : null),
               h('div', { className: 'wb-row-actions' },
                 h(IconBtn, { label: '上移', disabled: index === 0, onClick: () => moveTimeline(item.id, -1) }, '↑'),
@@ -1476,11 +1486,11 @@ window.__ModuleLoader__.load({
               placeholder: '例如：三座环礁围成内海，王都在最大环礁的珊瑚脊上；灰潮每月从东南来，只有点灯的城市能保住港口……',
               onChange: (event) => mutate((draft) => { draft.map.notes = event.target.value; }),
             })),
-          h('div', { className: 'wb-sectionhead' },
-            h('h3', null, '地图标注'),
-            h('span', { className: 'wb-hint' }, mapUrl ? '点击地图添加；点标注可编辑' : '上传地图后点击地图添加'),
-            h('span', { className: 'wb-spacer' }),
-            h(Btn, { size: 'sm', disabled: !mapUrl, onClick: () => openEntry('marker', null, { coords: { x: 0.5, y: 0.5 } }) }, '＋ 经纬度添加')),
+          h(SectionCard, {
+            title: '地图标注',
+            desc: mapUrl ? '点击地图添加标注；点已有标注可编辑。' : '上传地图后点击地图添加；也可以先按经纬度添加。',
+            actions: h(Btn, { size: 'sm', disabled: !mapUrl, onClick: () => openEntry('marker', null, { coords: { x: 0.5, y: 0.5 } }) }, '＋ 经纬度添加'),
+          },
           world.map.markers.length === 0
             ? h('div', { className: 'wb-hint' }, '还没有标注。标注可以标王都、战场、秘境、商路节点等。')
             : h('div', { className: 'wb-markerlist' },
@@ -1489,7 +1499,7 @@ window.__ModuleLoader__.load({
                 h('b', { className: 'wb-overflow', style: { flex: 1 } }, marker.name),
                 marker.note ? h('span', { className: 'wb-hint wb-overflow', style: { flex: 2 } }, marker.note) : null,
                 h(IconBtn, { label: '编辑标注', onClick: () => openEntry('marker', marker) }, '✎'),
-                h(IconBtn, { label: '删除标注', onClick: () => removeEntry('marker', marker) }, '×'))))));
+                h(IconBtn, { label: '删除标注', onClick: () => removeEntry('marker', marker) }, '×')))))));
     }
 
     /* ------------------------------------------------------------ AI 助手 */

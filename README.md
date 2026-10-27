@@ -4,6 +4,22 @@ DSH（DeepSeek Harness）Web 端的整页世界观管理插件。多个世界观
 
 > 无构建、零运行时依赖：Host 是 ESM，Client 用 `window.__ModuleLoader__.load` 包一层 React，不需要 JSX、打包器或额外 npm 包。
 
+## 界面预览
+
+| 概览 | 重大事件 |
+| --- | --- |
+| ![概览](screenshots/01-overview-light.png) | ![重大事件](screenshots/04-events.png) |
+
+| 世界地图 | AI 助手 |
+| --- | --- |
+| ![世界地图](screenshots/06-map.png) | ![AI 助手](screenshots/08-ai.png) |
+
+| 移动端概览 | 暗色主题 |
+| --- | --- |
+| ![移动端](screenshots/14-mobile-overview.png) | ![暗色](screenshots/12-overview-dark.png) |
+
+> 预览由真实 React 在独立浏览器中渲染，使用与宿主相同的 `--dsw-alias-*` 主题 token；实际安装后的侧栏与面板边框由 Harness 提供。
+
 ## 功能
 
 | 需求 | 实现 |

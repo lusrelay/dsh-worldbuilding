@@ -861,7 +861,8 @@ function applyChanges(rawWorld, changes) {
     if (SCALAR_TARGETS.has(target)) {
       const field = SCALAR_TARGETS.get(target);
       if (target === 'mapnotes') {
-        world.map = { ...(world.map || {}), notes: text };
+        const notes = text || cleanText(data?.notes ?? data?.content, LIMITS.entryContent);
+        world.map = { ...(world.map || {}), notes };
         applied.push('更新地图说明');
       } else {
         world[field] = text.slice(0, LIMITS[field] ?? LIMITS.entryContent);
@@ -1519,11 +1520,12 @@ function toolCreate() {
       world.type = cleanText(payload.type, LIMITS.type);
       world.era = cleanText(payload.era, LIMITS.era);
       world.summary = cleanText(payload.summary, LIMITS.summary);
+      const before = (await loadIndex()).activeId;
       const inserted = await insertWorld(world);
       if (payload.activate === false) {
         await withLock('index', async () => {
           const index = await loadIndex();
-          index.activeId = index.activeId || inserted.id;
+          index.activeId = before && before !== inserted.id ? before : index.activeId;
           await saveIndex(index);
         });
       }
@@ -1636,7 +1638,7 @@ async function route(ctx, endpoint, payload, signal) {
       const world = await resolveWorldRef(input.id);
       await withLock('index', async () => {
         const index = await loadIndex();
-        index.order = unique([world.id, ...index.order.filter((item) => item !== world.id)]);
+        index.order = index.order.includes(world.id) ? index.order : [world.id, ...index.order];
         index.activeId = world.id;
         await saveIndex(index);
       });
