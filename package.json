@@ -1,0 +1,63 @@
+{
+  "name": "@local/dsh-worldbuilding",
+  "version": "1.0.0",
+  "description": "世界观工坊：多世界观隔离存储、世界类型/时代/时间线与重大事件/主要构成/世界地图/基本设定，支持 AI 一次性生成、对话补充、通用格式导入与纯文本/格式化导出。",
+  "author": "lusrelay",
+  "license": "MIT",
+  "homepage": "https://github.com/lusrelay/dsh-worldbuilding#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lusrelay/dsh-worldbuilding.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lusrelay/dsh-worldbuilding/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "./icon.svg",
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js",
+    "test": "node tests/host.test.mjs && node tests/client.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "worldbuilding",
+    "world",
+    "lore",
+    "timeline"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

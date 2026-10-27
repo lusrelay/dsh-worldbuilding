@@ -1,0 +1,6 @@
+# 世界观工坊 bundle patch：一个 Host 插件。
+# Host 半身负责每个世界观独立落盘、AI 调用与 Agent 工具；
+# 浏览器半身（package.json dsh.client）负责「世界观工坊」整页 UI。
+- insert:
+    - id: worldbuilding
+      name: '@local/dsh-worldbuilding'
