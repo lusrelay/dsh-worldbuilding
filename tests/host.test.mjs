@@ -127,9 +127,17 @@ world.composition = [
   { title: '灯塔议会', content: '名义上的共主。' },
 ];
 world.events = [
-  { time: '第四纪元 1200 年', title: '白塔焚毁', description: '议会大灯塔被烧。', impact: '航运失去统一历法。' },
+  { time: '第四纪元 1200 年', title: '白塔焚毁', description: '议会大灯塔被烧，顾青梧在火场失踪。', impact: '航运失去统一历法。' },
   { time: '纪元前 300 年', title: '第一次灰潮', description: '三个港口消失。', impact: '人们开始修建灯塔。' },
   { time: '第四纪元 50 年', title: '绞索条约', description: '诸侯划定海峡。', impact: '形成今天的边界。' },
+];
+world.characters = [
+  {
+    name: '顾青梧', role: '主角', identity: '白塔最后的守夜人', description: '失忆的年轻守夜人，能听懂灯语。',
+    timeline: [{ time: '第四纪元 1190 年', title: '登上白塔', description: '被老守夜人收养。' }],
+    relations: [{ target: '裴照', type: '敌对', note: '怀疑对方参与了焚塔。' }],
+  },
+  { name: '裴照', role: '反派', identity: '议会执灯人', species: '人类', description: '掌握灯契签发权的野心家。' },
 ];
 const saved = await rpc('world/save', { id: worldId, world, rev });
 rev = saved.rev;
@@ -137,6 +145,9 @@ check('保存 rev 递增', saved.rev === 2, saved.rev);
 check('事件按时间升序', saved.world.events.map((event) => event.title).join('|') === '第一次灰潮|绞索条约|白塔焚毁', saved.world.events.map((event) => event.title));
 check('世界类型写入', saved.world.type === '低魔奇幻');
 check('保存后完整度 > 80', internal.completenessOf(saved.world) >= 80, internal.completenessOf(saved.world));
+check('角色写入并保留', saved.world.characters.length === 2 && saved.world.characters[0].name === '顾青梧', saved.world.characters.map((item) => item.name));
+check('角色关系按姓名解析成 id', saved.world.characters[0].relations[0]?.targetId === saved.world.characters[1].id, saved.world.characters[0].relations);
+check('角色时间点保留', saved.world.characters[0].timeline[0]?.title === '登上白塔');
 
 console.log('\n[3] 冲突检测');
 const stale = await rpcError('world/save', { id: worldId, world: saved.world, rev: 1 });
@@ -202,11 +213,18 @@ modelReply = JSON.stringify({
   settings: [{ title: '潮汐法术', content: '只能在涨潮时施法，退潮时反噬。' }],
   map: { notes: '三座环礁围成内海。', markers: [{ name: '王都', x: 0.4, y: 0.6, note: '珊瑚王都' }] },
   tags: ['海洋', '宫廷'],
+  characters: [
+    { name: '潮汐女王', role: '主角', identity: '珊瑚王座的持有者', species: '潮灵', nonHuman: true, description: '与海灵立约的年轻女王，正在失去听潮的能力。', timeline: [{ time: '潮历 812 年', title: '加冕', description: '在内海王都加冕。' }], relations: [{ target: '潮汐主教', type: '敌对', note: '教会认为女王与海灵的契约不合法。' }] },
+    { name: '潮汐主教', role: '反派', identity: '潮汐教会领袖', description: '掌握潮汐教义解释权的老人。' },
+  ],
 });
 const generated = await rpc('ai/generate', { prompt: '一个建立在珊瑚上的潮汐王国', mode: 'new', worldName: '潮汐王国' }, new AbortController().signal);
 check('生成新世界', generated.world.name === '潮汐王国' && generated.state.worlds.length === 3, generated.world.name);
 check('生成事件按时间排序', generated.world.events.map((event) => event.title).join('|') === '珊瑚誓约|王都沉没', generated.world.events.map((event) => event.title));
 check('生成地图标注', generated.world.map.markers.length === 1 && generated.world.map.markers[0].name === '王都');
+check('生成重要角色', generated.world.characters.length === 2 && generated.world.characters[0].name === '潮汐女王', generated.world.characters.map((item) => item.name));
+check('非人类物种保留', generated.world.characters[0].species === '潮灵' && generated.world.characters[0].nonHuman === true);
+check('生成角色关系按姓名解析', generated.world.characters[0].relations[0]?.targetId === generated.world.characters[1].id, generated.world.characters[0].relations);
 
 console.log('\n[7] AI 对话补充');
 modelReply = JSON.stringify({
@@ -214,11 +232,13 @@ modelReply = JSON.stringify({
   changes: [
     { target: 'composition', action: 'add', data: { title: '潮汐议会', content: '由七位潮汐领主组成。' } },
     { target: 'event', action: 'add', data: { time: '潮历 812 年', title: '七领主政变', description: '议会夺取王权。', impact: '国王成为象征。' } },
+    { target: 'character', action: 'add', data: { name: '潮汐商会会长', role: '剧情 NPC', identity: '内海商会会长', npc: true, description: '在政变中站错队的商人。', relations: [{ target: '潮汐女王', type: '盟友', note: '暗中为女王提供资金。' }] } },
   ],
 });
 const chat1 = await rpc('ai/chat', { id: generated.world.id, message: '补一个潮汐议会，还有 812 年的政变' });
 check('对话返回 reply', chat1.reply.includes('潮汐议会'), chat1.reply);
-check('对话应用了两个变更', chat1.applied.length === 2, chat1.applied);
+check('对话应用了三个变更', chat1.applied.length === 3, chat1.applied);
+check('对话新增角色并解析关系', chat1.world.characters.length === 3 && chat1.world.characters[2].relations[0]?.targetId === chat1.world.characters[0].id, chat1.world.characters.map((item) => item.name));
 check('对话写入 aiChat', chat1.world.aiChat.length === 2, chat1.world.aiChat);
 check('对话新增事件已排序', chat1.world.events.some((event) => event.title === '七领主政变'));
 modelReply = JSON.stringify({ reply: '潮汐法术在退潮时反噬，越强的法术代价越大。', changes: [] });
@@ -238,10 +258,12 @@ modelReply = JSON.stringify({
   composition: [{ title: '月背城邦', content: '十二座环形山城市。' }],
   settings: [{ title: '真空法', content: '任何人在真空中不得被剥夺氧气。' }],
   map: { notes: '月背环形山链。', markers: [] },
+  characters: [{ name: '静海议长', role: '重要配角', identity: '联邦议长', description: '主持十二城邦签约。', timeline: [{ time: '静海纪 12 年', title: '签署宪章', description: '代表静海城邦签字。' }] }],
 });
 const imported = await rpc('ai/import', { text: '# 银月联邦\n\n月球背面的十二座城邦……', mode: 'new' });
 check('导入生成新世界', imported.world.name === '银月联邦');
 check('导入事件写入', imported.world.events[0].title === '联邦宪章');
+check('导入角色写入', imported.world.characters.length === 1 && imported.world.characters[0].name === '静海议长');
 check('导入后共有 4 个世界', imported.state.worlds.length === 4, imported.state.worlds.length);
 
 console.log('\n[9] 世界地图');
@@ -252,6 +274,66 @@ const mapData = await rpc('world/map', { id: generated.world.id });
 check('地图图片读回', mapData.dataUrl.startsWith('data:image/png;base64,'));
 const removedMap = await rpc('world/map/remove', { id: generated.world.id });
 check('地图图片移除', removedMap.world.map.image === '');
+
+console.log('\n[9b] 角色工具、图片与时间轴');
+const charTool = await updateTool.execute({
+  world: worldId,
+  changes: [
+    { target: 'character', action: 'add', data: { name: '雾港女王', role: '重要配角', identity: '走私者联盟首领', description: '在雾港沉没后接管外海航道。', timeline: [{ time: '第四纪元 1215 年', title: '加冕' }], relations: [{ target: '顾青梧', type: '竞争', note: '争夺白塔灯谱。' }] } },
+    { target: 'characterTimeline', action: 'add', data: { characterId: '雾港女王', time: '第四纪元 1218 年', title: '灯会现身', description: '在灯会上公开灰契。' } },
+    { target: 'characterRelation', action: 'add', data: { fromId: '裴照', target: '雾港女王', type: '合作', note: '互相利用。' } },
+  ],
+}, {});
+check('工具新增角色与时间点', charTool.characters === 3 && charTool.applied.length >= 3, charTool);
+const charRead = await readTool.execute({ world: worldId, section: 'characters' }, {});
+check('读取角色分区', charRead.content.includes('雾港女王') && charRead.content.includes('顾青梧'));
+const axisRead = await readTool.execute({ world: worldId, section: 'axis' }, {});
+check('读取时间轴事实', axisRead.content.includes('participants') && axisRead.content.includes('relations'));
+
+const charPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lw3JXwAAAABJRU5ErkJggg==';
+let charWorld = (await rpc('world/get', { id: worldId })).world;
+const gu = charWorld.characters.find((item) => item.name === '顾青梧');
+const charUploaded = await rpc('character/image/upload', { id: worldId, characterId: gu.id, dataUrl: charPng });
+check('角色图片上传', charUploaded.image.startsWith(gu.id) && charUploaded.dataUrl === charPng, charUploaded.image);
+gu.image = charUploaded.image;
+charWorld = (await rpc('world/save', { id: worldId, world: charWorld, rev: charWorld.rev })).world;
+const imageMap = await rpc('character/images', { id: worldId, ids: [gu.id] });
+check('角色图片读回', imageMap.images[gu.id]?.startsWith('data:image/png;base64,'), Object.keys(imageMap.images));
+const imageRemoved = await rpc('character/image/remove', { id: worldId, characterId: gu.id });
+check('角色图片移除', imageRemoved.removed === true);
+
+const localAxis = await rpc('timeline/integrate', { id: worldId });
+const guAfter = localAxis.world.characters.find((item) => item.name === '顾青梧');
+const whiteEvent = localAxis.world.events.find((event) => event.title === '白塔焚毁');
+check('本地时间轴整合有变更', localAxis.applied.length > 0, localAxis.applied);
+check('事件文本提到的角色被关联', guAfter.eventIds.includes(whiteEvent.id), guAfter.eventIds);
+check('角色时间轴补出参与事件', guAfter.timeline.some((point) => point.eventId === whiteEvent.id), guAfter.timeline.map((point) => point.title));
+
+const pei = localAxis.world.characters.find((item) => item.name === '裴照');
+modelReply = JSON.stringify({
+  reply: '已补齐裴照在焚塔夜的经历与旧识关系。',
+  characters: [{
+    id: pei.id,
+    eventIds: [whiteEvent.id],
+    timeline: [{ time: '第四纪元 1200 年', title: '焚塔夜', description: '裴照在火场外签发最后的灯契。', eventId: whiteEvent.id }],
+    relations: [{ targetId: guAfter.id, type: '旧识', note: '两人曾在白塔共事。' }],
+  }],
+  notes: [],
+});
+const aiAxis = await rpc('ai/timeline', { id: worldId });
+const peiAfter = aiAxis.world.characters.find((item) => item.name === '裴照');
+check('AI 时间轴整合新增事实', aiAxis.applied.length > 0, aiAxis.applied);
+check('AI 关联参与事件', peiAfter.eventIds.includes(whiteEvent.id));
+check('AI 新增角色关系', peiAfter.relations.some((relation) => relation.targetId === guAfter.id && relation.type === '旧识'), peiAfter.relations);
+
+const characterJson = await rpc('export', { id: worldId, format: 'json' });
+const characterParsed = JSON.parse(characterJson.text);
+check('导出 JSON 包含角色', characterParsed.characters?.length === 3, characterParsed.characters?.length);
+check('导出 JSON 包含角色关系', characterParsed.characters?.find((item) => item.name === '顾青梧')?.relations?.length > 0);
+const characterMd = await rpc('export', { id: worldId, format: 'markdown' });
+check('导出 Markdown 包含角色', characterMd.text.includes('## 重要角色') && characterMd.text.includes('顾青梧'));
+const characterTxt = await rpc('export', { id: worldId, format: 'txt' });
+check('导出纯文本包含角色', characterTxt.text.includes('【重要角色】') && characterTxt.text.includes('雾港女王'));
 
 console.log('\n[10] 多世界隔离与切换');
 const first = await rpc('world/get', { id: worldId });

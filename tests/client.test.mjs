@@ -46,7 +46,7 @@ globalThis.window = {
 };
 
 let source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
-const injection = `    globalThis.__WB__ = { WorldbuildingPage, Header, EmptyState, OverviewPanel, TypePanel, TimelinePanel, EventsPanel, CompositionPanel, SettingsPanel, MapPanel, AiPanel, CreateDialog, GenerateDialog, ImportDialog, ExportDialog, EntryDialog, ConfirmDialog, RenameDialog, countsOfClient, completenessOfClient, parseYear, sortEventsClient };\n    return { inject, apply };`;
+const injection = `    globalThis.__WB__ = { WorldbuildingPage, Header, EmptyState, OverviewPanel, TypePanel, TimelinePanel, EventsPanel, CompositionPanel, SettingsPanel, MapPanel, AiPanel, CharactersPanel, CharacterDialog, TimelineAxisPanel, CreateDialog, GenerateDialog, ImportDialog, ExportDialog, EntryDialog, ConfirmDialog, RenameDialog, countsOfClient, completenessOfClient, parseYear, sortEventsClient, buildAxisModel, characterIsNpc };\n    return { inject, apply };`;
 if (!source.includes('    return { inject, apply };')) throw new Error('找不到模块导出锚点');
 source = source.replace('    return { inject, apply };', injection);
 new Function('window', `${source}`)(globalThis.window);
@@ -142,6 +142,20 @@ const world = {
     { id: 'msg_1', role: 'user', text: '加一个走私者联盟。', at: 1700000000000, changes: [] },
     { id: 'msg_2', role: 'assistant', text: '已加入走私者联盟。', at: 1700000001000, changes: ['新增构成「走私者联盟」'] },
   ],
+  characters: [
+    {
+      id: 'ch_1', name: '顾青梧', role: '主角', identity: '白塔最后的守夜人', species: '', nonHuman: false, npc: false,
+      description: '失忆的年轻守夜人，能听懂灯语。', image: 'portrait.png',
+      relatedEntries: [{ kind: 'event', id: 'ev_2', label: '白塔焚毁' }],
+      timeline: [{ id: 'tp_1', time: '第四纪元 1190 年', title: '登上白塔', description: '被老守夜人收养。', eventId: '', source: 'manual' }],
+      eventIds: ['ev_2'],
+      relations: [{ id: 'rel_1', targetId: 'ch_2', type: '敌对', note: '怀疑对方参与了焚塔。' }],
+    },
+    {
+      id: 'ch_2', name: '裴照', role: '反派', identity: '议会执灯人', species: '人类', nonHuman: false, npc: true,
+      description: '掌握灯契签发权的野心家。', image: '', relatedEntries: [], timeline: [], eventIds: [], relations: [],
+    },
+  ],
   createdAt: 1700000000000,
   updatedAt: 1700000001000,
   rev: 3,
@@ -184,6 +198,18 @@ const settings = render('SettingsPanel', W.SettingsPanel, base);
 check('设定页显示规则', settings.flat.includes('灰潮'));
 const map = render('MapPanel', W.MapPanel, { ...base, mapUrl: 'data:image/png;base64,AAAA', uploadMap: noop, removeMap: noop });
 check('地图页显示标注', map.flat.includes('王都') && map.flat.includes('地图标注'));
+const characters = render('CharactersPanel', W.CharactersPanel, { world, charImages: { ch_1: 'data:image/png;base64,AAAA' }, openCharacter: noop, removeCharacter: noop, openGenerate: noop, onGo: noop });
+check('角色页显示角色卡', characters.flat.includes('顾青梧') && characters.flat.includes('裴照'));
+check('角色页显示 NPC 标签', characters.flat.includes('NPC'));
+const characterDialog = render('CharacterDialog', W.CharacterDialog, { world, character: world.characters[0], charImages: { ch_1: 'data:image/png;base64,AAAA' }, onClose: noop, onSave: noop, onUploadImage: async () => ({ image: 'x.png', dataUrl: '' }) });
+check('角色编辑器含身份/物种/时间线', characterDialog.flat.includes('身份') && characterDialog.flat.includes('物种') && characterDialog.flat.includes('角色时间线'));
+check('角色关系自动显示对象', characterDialog.flat.includes('裴照') && characterDialog.flat.includes('敌对'));
+const axis = render('TimelineAxisPanel', W.TimelineAxisPanel, { world, charImages: { ch_1: 'data:image/png;base64,AAAA' }, openCharacter: noop, onGo: noop, onIntegrateLocal: noop, onIntegrateAi: noop });
+check('时间轴显示事件与角色', axis.flat.includes('白塔焚毁') && axis.flat.includes('顾青梧') && axis.flat.includes('从现有信息整合'));
+const axisModel = W.buildAxisModel(world);
+check('时间轴模型事件节点', axisModel.eventNodes.length === 2);
+check('时间轴模型角色泳道', axisModel.charLanes.length === 2);
+check('时间轴模型参与关系', axisModel.participation.get('ch_1').has('ev_2'));
 
 console.log('\n[4] AI 助手');
 const ai = render('AiPanel', W.AiPanel, { world, aiInput: '', setAiInput: noop, onSend: noop, pending: '', onCancel: noop, onGenerate: noop, onClearChat: noop });

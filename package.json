@@ -1,7 +1,7 @@
 {
   "name": "@local/dsh-worldbuilding",
-  "version": "1.0.0",
-  "description": "世界观工坊：多世界观隔离存储、世界类型/时代/时间线与重大事件/主要构成/世界地图/基本设定，支持 AI 一次性生成、对话补充、通用格式导入与纯文本/格式化导出。",
+  "version": "1.1.0",
+  "description": "世界观工坊：多世界观隔离、重要角色/NPC 与角色图、角色关系与时间轴、AI 生成/对话补充、通用导入、纯文本与格式化导出。",
   "author": "lusrelay",
   "license": "MIT",
   "homepage": "https://github.com/lusrelay/dsh-worldbuilding#readme",

@@ -15,8 +15,8 @@ import { dirname, join } from 'node:path';
 
 export const inject = ['connection'];
 
-const BUILD = '1.0.0';
-const SCHEMA = 'worldbuilding/1';
+const BUILD = '1.1.0';
+const SCHEMA = 'worldbuilding/2';
 const RPC_CHANNEL = '/worldbuilding';
 
 const DSH_HOME = process.env.DSH_HOME && process.env.DSH_HOME.trim()
@@ -47,7 +47,17 @@ const LIMITS = {
   chatText: 12000,
   importText: 80000,
   mapBytes: 6 * 1024 * 1024,
-  worldJson: 4 * 1024 * 1024,
+  characterCount: 200,
+  characterName: 120,
+  characterRole: 60,
+  characterIdentity: 200,
+  characterDescription: 8000,
+  characterTimelineCount: 120,
+  characterRelations: 40,
+  characterRelated: 40,
+  characterEventIds: 300,
+  characterImageBytes: 2 * 1024 * 1024,
+  worldJson: 6 * 1024 * 1024,
 };
 
 const ENTRY_TARGETS = {
@@ -81,6 +91,17 @@ const TARGET_ALIAS = new Map([
   ['mapmarkers', 'marker'],
   ['marker', 'marker'],
   ['markers', 'marker'],
+  ['character', 'character'],
+  ['characters', 'character'],
+  ['npc', 'character'],
+  ['role', 'character'],
+  ['charactertimeline', 'charactertimeline'],
+  ['charactertimelines', 'charactertimeline'],
+  ['chractertimeline', 'charactertimeline'],
+  ['characterrelation', 'characterrelation'],
+  ['characterrelations', 'characterrelation'],
+  ['relation', 'characterrelation'],
+  ['relations', 'characterrelation'],
 ]);
 
 class AppError extends Error {
@@ -258,6 +279,159 @@ function imageName(value) {
   return /^[a-z0-9][a-z0-9._-]*\.(png|jpe?g|webp|gif)$/i.test(name) ? name : '';
 }
 
+/* --------------------------------------------------------------- 角色模型 */
+
+const RELATED_KINDS = new Set(['event', 'timeline', 'composition', 'setting', 'marker']);
+const RELATED_PREFIX = { event: 'ev', timeline: 'tl', composition: 'cp', setting: 'se', marker: 'mk' };
+
+function sortCharacterPoints(points) {
+  return points
+    .map((point, index) => ({ point, index, year: parseYear(point.time) }))
+    .sort((left, right) => {
+      const ly = left.year === null ? Number.POSITIVE_INFINITY : left.year;
+      const ry = right.year === null ? Number.POSITIVE_INFINITY : right.year;
+      if (ly !== ry) return ly - ry;
+      const lc = Number(left.point.createdAt) || 0;
+      const rc = Number(right.point.createdAt) || 0;
+      if (lc !== rc) return lc - rc;
+      return left.index - right.index;
+    })
+    .map((item) => item.point);
+}
+
+function normalizeCharacterTimeline(input) {
+  const points = asArray(input).slice(0, LIMITS.characterTimelineCount).map((item) => {
+    const source = item && typeof item === 'object' ? item : {};
+    const stamp = now();
+    return {
+      id: idOrNew(source.id, 'tp'),
+      time: cleanText(source.time ?? source.at ?? source.date, LIMITS.eventTime),
+      title: cleanText(source.title ?? source.name, LIMITS.entryTitle) || '未命名时间点',
+      description: cleanText(source.description ?? source.content, LIMITS.entryContent),
+      eventId: validId(source.eventId, ['ev']),
+      source: ['manual', 'auto', 'ai'].includes(source.source) ? source.source : 'manual',
+      createdAt: Number.isFinite(Number(source.createdAt)) ? Number(source.createdAt) : stamp,
+      updatedAt: stamp,
+    };
+  });
+  return sortCharacterPoints(points);
+}
+
+function normalizeRelatedEntries(input) {
+  const seen = new Set();
+  const out = [];
+  for (const item of asArray(input).slice(0, LIMITS.characterRelated)) {
+    const source = item && typeof item === 'object' ? item : {};
+    const kind = cleanText(source.kind ?? source.type, 20).toLowerCase();
+    if (!RELATED_KINDS.has(kind)) continue;
+    const id = validId(source.id, [RELATED_PREFIX[kind]]);
+    if (!id) continue;
+    const key = `${kind}:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      kind,
+      id,
+      label: cleanText(source.label ?? source.title ?? source.name, 200),
+    });
+  }
+  return out;
+}
+
+function normalizeRelations(input) {
+  const seen = new Set();
+  const out = [];
+  for (const item of asArray(input).slice(0, LIMITS.characterRelations)) {
+    const source = item && typeof item === 'object' ? item : {};
+    const rawTarget = source.targetId || source.target || source.targetName || source.characterId || '';
+    const targetId = validId(rawTarget, ['ch']);
+    const targetName = targetId ? '' : cleanText(rawTarget, LIMITS.characterName);
+    const type = cleanText(source.type ?? source.relation ?? source.kind, 40) || '其他';
+    const key = `${targetId || targetName}|${type}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      id: idOrNew(source.id, 'rel'),
+      targetId,
+      targetName,
+      type,
+      note: cleanText(source.note ?? source.description, 800),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  }
+  return out;
+}
+
+function normalizeCharacters(input) {
+  return asArray(input).slice(0, LIMITS.characterCount).map((item) => {
+    const source = item && typeof item === 'object' ? item : {};
+    const species = cleanText(source.species, 80);
+    const role = cleanText(source.role ?? source.type, LIMITS.characterRole) || '重要角色';
+    const nonHuman = Boolean(source.nonHuman)
+      || Boolean(species && !/^(人类|人族|human|humanoid)$/i.test(species));
+    const npc = Boolean(source.npc) || /NPC|剧情/i.test(role);
+    return entryStamp(source, 'ch', {
+      name: cleanText(source.name, LIMITS.characterName) || '未命名角色',
+      role,
+      identity: cleanText(source.identity ?? source.title, LIMITS.characterIdentity),
+      species,
+      nonHuman,
+      npc,
+      description: cleanText(source.description ?? source.summary ?? source.content, LIMITS.characterDescription),
+      image: imageName(source.image),
+      relatedEntries: normalizeRelatedEntries(source.relatedEntries ?? source.related),
+      timeline: normalizeCharacterTimeline(source.timeline ?? source.points),
+      eventIds: unique(asArray(source.eventIds).map((id) => validId(id, ['ev'])).filter(Boolean)).slice(0, LIMITS.characterEventIds),
+      relations: normalizeRelations(source.relations ?? source.relationships),
+    });
+  });
+}
+
+/** 角色关系可能用姓名表达；在世界完整后把姓名/ID 统一解析成稳定 id，并丢弃失效引用。 */
+function resolveCharacterLinks(world) {
+  const characters = asArray(world.characters);
+  const byName = new Map();
+  for (const character of characters) {
+    if (!byName.has(character.name)) byName.set(character.name, character);
+  }
+  const eventIds = new Set(world.events.map((event) => event.id));
+  const sectionRefs = new Map();
+  for (const event of world.events) sectionRefs.set(`event:${event.id}`, event.title);
+  for (const era of world.timeline) sectionRefs.set(`timeline:${era.id}`, era.name);
+  for (const item of world.composition) sectionRefs.set(`composition:${item.id}`, item.title);
+  for (const item of world.settings) sectionRefs.set(`setting:${item.id}`, item.title);
+  for (const marker of world.map.markers) sectionRefs.set(`marker:${marker.id}`, marker.name);
+
+  for (const character of characters) {
+    character.eventIds = unique(character.eventIds).filter((id) => eventIds.has(id)).slice(0, LIMITS.characterEventIds);
+    character.timeline = normalizeCharacterTimeline(character.timeline).map((point) => ({
+      ...point,
+      eventId: eventIds.has(point.eventId) ? point.eventId : '',
+    }));
+    character.relatedEntries = character.relatedEntries
+      .map((ref) => {
+        const label = sectionRefs.get(`${ref.kind}:${ref.id}`);
+        return label ? { ...ref, label } : null;
+      })
+      .filter(Boolean)
+      .slice(0, LIMITS.characterRelated);
+    const resolved = [];
+    const seen = new Set();
+    for (const relation of character.relations) {
+      let targetId = relation.targetId;
+      if (!targetId && relation.targetName) targetId = byName.get(relation.targetName)?.id || '';
+      if (!targetId || targetId === character.id) continue;
+      const key = `${targetId}|${relation.type}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      resolved.push({ ...relation, targetId, targetName: undefined });
+    }
+    character.relations = resolved.slice(0, LIMITS.characterRelations);
+  }
+  return world;
+}
+
 /** 把一个来源对象清洗成完整世界观；所有入口共用，保证落盘格式一致。 */
 function normalizeWorld(input, options = {}) {
   const source = input && typeof input === 'object' ? input : {};
@@ -286,12 +460,14 @@ function normalizeWorld(input, options = {}) {
       notes: cleanText(source.map?.notes, LIMITS.entryContent),
       markers: normalizeMarkers(source.map?.markers),
     },
+    characters: normalizeCharacters(source.characters),
     aiChat: normalizeChat(options.aiChat ?? source.aiChat),
     createdAt,
     updatedAt: Number.isFinite(Number(source.updatedAt)) ? Number(source.updatedAt) : stamp,
     rev: boundedNumber(source.rev, 0, Number.MAX_SAFE_INTEGER, 0),
   };
   world.events = sortEvents(world.events);
+  resolveCharacterLinks(world);
   return world;
 }
 
@@ -306,12 +482,14 @@ function countsOf(world) {
     composition: world.composition.length,
     settings: world.settings.length,
     markers: world.map.markers.length,
+    characters: world.characters.length,
     words: [
       world.summary, world.style, world.eraNote,
       ...world.events.map((item) => `${item.description}${item.impact}`),
       ...world.timeline.map((item) => item.description),
       ...world.composition.map((item) => item.content),
       ...world.settings.map((item) => item.content),
+      ...world.characters.map((item) => `${item.description}${item.identity}${item.timeline.map((point) => point.description).join('')}`),
       world.map.notes,
     ].join('').replace(/\s/g, '').length,
   };
@@ -327,6 +505,8 @@ function completenessOf(world) {
     world.composition.length > 0,
     world.settings.length > 0,
     Boolean(world.map.notes || world.map.image || world.map.markers.length),
+    world.characters.length > 0,
+    world.characters.some((character) => character.relations.length > 0 || character.timeline.length > 0 || character.eventIds.length > 0),
     Boolean(world.summary),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
@@ -383,6 +563,54 @@ async function writeAtomic(file, value) {
 function worldFile(id) {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(String(id))) throw new AppError('worldbuilding/bad-id', '世界观 id 不合法');
   return join(WORLDS_DIR, `${id}.json`);
+}
+
+function characterImageDir(worldId) {
+  return join(MEDIA_DIR, worldId, 'characters');
+}
+
+async function characterImageFiles(worldId, characterId) {
+  try {
+    const files = await readdir(characterImageDir(worldId));
+    return files.filter((name) => name.startsWith(`${characterId}.`) || name.startsWith(`${characterId}-`));
+  } catch {
+    return [];
+  }
+}
+
+async function removeCharacterFiles(worldId, characterId) {
+  const dir = characterImageDir(worldId);
+  for (const name of await characterImageFiles(worldId, characterId)) {
+    await unlink(join(dir, name)).catch(() => {});
+  }
+}
+
+async function readCharacterImage(worldId, imageNameValue) {
+  const name = imageName(imageNameValue);
+  if (!name) return '';
+  try {
+    const bytes = await readFile(join(characterImageDir(worldId), name));
+    const extension = name.split('.').pop()?.toLowerCase() ?? 'png';
+    const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension}`;
+    return `data:${mime};base64,${bytes.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+/** 保存后清理被删除角色的图片，以及被替换/清空的旧图；未关联的孤儿文件保留，避免误删刚上传的草稿。 */
+async function cleanupCharacterImages(worldId, existing, next) {
+  const dir = characterImageDir(worldId);
+  for (const old of existing.characters) {
+    const current = next.characters.find((character) => character.id === old.id);
+    if (!current) {
+      await removeCharacterFiles(worldId, old.id);
+      continue;
+    }
+    if (old.image && old.image !== current.image) {
+      await unlink(join(dir, old.image)).catch(() => {});
+    }
+  }
 }
 
 function normalizeIndex(input) {
@@ -648,6 +876,25 @@ function compactWorld(world, budget = 18000) {
     settings: world.settings.slice(0, countLimit).map((item) => ({
       id: item.id, title: item.title, content: cut(item.content, contentLimit),
     })),
+    characters: world.characters.slice(0, countLimit).map((character) => ({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      identity: character.identity,
+      species: character.species,
+      nonHuman: character.nonHuman,
+      npc: character.npc,
+      description: cut(character.description, contentLimit),
+      eventIds: character.eventIds.slice(0, 16),
+      relatedEntries: character.relatedEntries.slice(0, 8).map((ref) => `${ref.kind}:${ref.label}`),
+      timeline: character.timeline.slice(0, 10).map((point) => ({
+        id: point.id, time: point.time, title: point.title,
+        description: cut(point.description, contentLimit), eventId: point.eventId,
+      })),
+      relations: character.relations.slice(0, 12).map((relation) => ({
+        targetId: relation.targetId, type: relation.type, note: cut(relation.note, Math.min(500, contentLimit)),
+      })),
+    })),
     map: {
       notes: cut(world.map.notes, contentLimit),
       markers: world.map.markers.slice(0, Math.min(40, countLimit)).map((marker) => ({
@@ -678,6 +925,7 @@ const SCHEMA_GUIDE = `{
   "events": [{"time": "世界内时间（写法要能比较先后，例如：第三纪元 1200 年 / 纪元前 300 年）", "title": "事件名", "description": "发生了什么、牵涉谁", "impact": "对世界造成的长期影响"}],
   "composition": [{"title": "构成项（地理/势力/族群/经济/军事/宗教/魔法体系/日常生活…）", "content": "具体内容"}],
   "settings": [{"title": "规则名（世界规则/力量体系/物理法则/社会法则/禁忌…）", "content": "规则内容与边界"}],
+  "characters": [{"name": "角色姓名", "role": "主角/重要配角/反派/剧情NPC/导师/关键路人/其他", "identity": "在世界中的身份、职位或称号", "species": "非人类角色的物种，人类可留空", "nonHuman": false, "npc": false, "description": "外貌、性格、动机、能力、秘密、说话方式；与哪些事件/势力有关", "timeline": [{"time": "角色经历的时间", "title": "发生了什么", "description": "细节", "eventId": "可选：关联的重大事件 id"}], "eventIds": ["可选：参与的重大事件 id"], "relations": [{"target": "另一角色的姓名（生成时）或 id（更新时）", "type": "盟友/敌对/亲属/师徒/恋人/上下级/竞争/其他", "note": "关系的具体内容与张力"}], "relatedEntries": [{"kind": "event/timeline/composition/setting/marker", "id": "已有条目 id", "label": "条目名称"}]}],
   "map": {"notes": "地理格局：大陆、海洋、气候、边境、关键地点", "markers": [{"name": "地点名", "x": 0.5, "y": 0.5, "note": "地点说明"}]},
   "tags": ["标签"]
 }`;
@@ -691,10 +939,12 @@ const GENERATE_SYSTEM = `你是一位资深世界观设定师，擅长把一句�
 4. composition 写 8-12 项，覆盖地理、势力、族群、经济、军事、宗教或技术/力量体系、普通人的日常生活。
 5. settings 写 6-10 条世界规则，必须有边界与代价，不能是「什么都能做到」。
 6. map.notes 写清楚大陆与海洋的格局、气候、边境和 5 个以上关键地点；markers 可以留空，也可以给 3-8 个地点（x/y 为 0-1 的相对坐标）。
-7. summary 用 2-4 段写清楚：这个世界是什么、最核心的矛盾是什么、普通人怎么活、故事可以从哪里开始。
-8. style 写清叙事基调与语言质感，并明确要避免的俗套。
-9. 中文输出；专有名词要统一，不要中英混杂。不要出现真实国家、真实人物或现实宗教的贬损性描写。
-10. 不要输出 JSON 之外的任何字符。`;
+7. characters 写 6-10 个重要角色，其中至少 1-2 个是剧情 NPC；至少 2 个角色与当前时代的核心矛盾直接相关。每个角色要有 role、identity、description，并给出 1-3 个 timeline 时间点；非人类角色必须写 species 并把 nonHuman 设为 true。
+8. characters.relations 用角色的「姓名」指向另一个角色（生成阶段没有 id），写清关系类型与张力；至少 4 条关系，形成一张可读的关系网。角色时间线与重大事件、时代转折要能对上。
+9. summary 用 2-4 段写清楚：这个世界是什么、最核心的矛盾是什么、普通人怎么活、故事可以从哪里开始。
+10. style 写清叙事基调与语言质感，并明确要避免的俗套。
+11. 中文输出；专有名词要统一，不要中英混杂。不要出现真实国家、真实人物或现实宗教的贬损性描写。
+12. 不要输出 JSON 之外的任何字符。`;
 
 const FILL_RULES = `这是「补全」任务：用户已经写了部分内容。你只能补空缺与明显过薄的部分，不能改写或删除已有内容，不能改变已有的专有名词。
 - 已有字段非空时保持原样；已有条目不要重复添加；可以新增缺失的条目，但新条目必须与已有设定兼容。
@@ -706,11 +956,12 @@ const IMPORT_SYSTEM = `你是一位世界观资料整理师。用户会给你一
 
 整理规则：
 1. 原资料里的事实优先。不要为了凑结构编造与原文冲突的内容；原文没有的字段用空字符串或空数组。
-2. 把散落的信息归位：地理/势力/族群/经济/军事/宗教/技术体系放进 composition；规则/法则/禁忌放进 settings；历史大事放进 events；时代划分放进 timeline；一句话总览放进 summary。
+2. 把散落的信息归位：地理/势力/族群/经济/军事/宗教/技术体系放进 composition；规则/法则/禁忌放进 settings；历史大事放进 events；时代划分放进 timeline；角色与 NPC 放进 characters；一句话总览放进 summary。
 3. 时间线要尽量还原原文的时间写法；能判断先后的事件按时间升序排列。原文没有明确时间的，按叙述顺序估算，并在 time 里写「约 …」。
 4. 合并重复条目；同一势力/地点只保留一条，把细节合并进 content。
-5. 保留原文的专有名词与语言；如果原文是外文，专有名词保留原文，说明文字可以翻译成中文。
-6. 输出必须是完整 JSON，字段结构如下：
+5. 角色要保留原文的姓名、身份、物种与关系；关系对象可以用姓名表示，导入后会自动解析成角色 id。角色经历放进 timeline，参与的重大事件放进 eventIds（如果原文能对应到 events 的 id）。
+6. 保留原文的专有名词与语言；如果原文是外文，专有名词保留原文，说明文字可以翻译成中文。
+7. 输出必须是完整 JSON，字段结构如下：
 ${SCHEMA_GUIDE}`;
 
 const CHAT_SYSTEM = `你是「世界观工坊」的设定助手。用户正在通过对话补充一个已经存在的世界观。你要根据当前世界观数据与用户的这句话，决定需要新增或修改哪些内容，并输出一个 JSON 对象。
@@ -722,18 +973,43 @@ const CHAT_SYSTEM = `你是「世界观工坊」的设定助手。用户正在�
     {"target": "name|type|style|era|eraNote|summary|mapNotes", "action": "set", "text": "新内容"},
     {"target": "event|timeline|composition|setting|marker", "action": "add", "data": {"title": "...", "content": "...", "time": "...", "description": "...", "impact": "...", "name": "...", "span": "...", "note": "...", "x": 0.5, "y": 0.5}},
     {"target": "event|timeline|composition|setting|marker", "action": "update", "id": "已有条目的 id", "data": {"需要改的字段": "新值"}},
-    {"target": "event|timeline|composition|setting|marker", "action": "remove", "id": "已有条目的 id"}
+    {"target": "event|timeline|composition|setting|marker", "action": "remove", "id": "已有条目的 id"},
+    {"target": "character", "action": "add", "data": {"name": "姓名", "role": "主角/重要配角/反派/剧情NPC/其他", "identity": "身份", "species": "非人类物种，可留空", "nonHuman": false, "npc": false, "description": "外貌/性格/动机/秘密", "timeline": [{"time": "时间", "title": "经历", "description": "细节"}], "relations": [{"target": "另一角色的姓名或 id", "type": "盟友/敌对/亲属/师徒/恋人/上下级/竞争/其他", "note": "关系张力"}]}},
+    {"target": "character", "action": "update", "id": "已有角色 id", "data": {"需要改的字段": "新值"}},
+    {"target": "characterTimeline", "action": "add", "data": {"characterId": "ch_x", "time": "时间", "title": "经历", "description": "细节", "eventId": "可选的事件 id"}},
+    {"target": "characterRelation", "action": "add", "data": {"fromId": "ch_x", "target": "ch_y 或另一角色姓名", "type": "盟友", "note": "关系张力"}}
   ]
 }
 
 规则：
 1. 只输出 JSON，不要代码围栏或解释。
 2. 现有内容默认保留。除非用户明确要求删除或改写，否则只做增量补充。
-3. update/remove 必须使用当前数据里真实存在的 id，不能编造 id；新增条目不要带 id。
+3. update/remove 必须使用当前数据里真实存在的 id，不能编造 id；新增条目不要带 id。角色关系可以用姓名指向另一个已有角色，系统会自动解析成 id。
 4. target 为 event 时 data 用 time/title/description/impact；timeline 用 name/span/description；composition 和 setting 用 title/content；marker 用 name/x/y/note（x/y 为 0-1）。
-5. 用户问的是问题时，changes 返回空数组，在 reply 里直接回答。
-6. 回复使用用户的语言；设定内容保持世界观原语言。
-7. 一次最多 12 条 changes；如果用户要求大改，优先补齐最关键的几个部分并告诉用户还可以继续。`;
+5. target 为 character 时 data 用 name/role/identity/species/nonHuman/npc/description，可选 timeline/relations/eventIds/relatedEntries；新增角色必须写 name。
+6. 用户问的是问题时，changes 返回空数组，在 reply 里直接回答。
+7. 回复使用用户的语言；设定内容保持世界观原语言。
+8. 一次最多 12 条 changes；如果用户要求大改，优先补齐最关键的几个部分并告诉用户还可以继续。`;
+
+const AI_TIMELINE_SYSTEM = `你是「世界观工坊」的时间线整合师。你会收到一个世界观的重大事件（带 id/time/title）和重要角色（带 id/name/role/identity/description/已有 eventIds/timeline/relations）。你的任务是只根据这些事实，补齐角色与事件之间的时间关系，输出一个 JSON 对象。
+
+输出格式：
+{
+  "reply": "给用户看的中文回复，1-3 句；没有可补充的就说明",
+  "characters": [
+    {"id": "ch_x", "eventIds": ["ev_y"], "timeline": [{"time": "事件时间", "title": "角色在事件中的经历", "description": "具体做了什么", "eventId": "ev_y"}], "relations": [{"targetId": "ch_z", "type": "盟友/敌对/亲属/师徒/恋人/上下级/竞争/其他", "note": "关系张力"}]}
+  ],
+  "notes": ["可选：你判断出的因果或时间冲突，供用户参考"]
+}
+
+规则：
+1. 只输出 JSON，不要代码围栏或解释。
+2. 只能使用给定的事件 id 与角色 id，不能编造新 id、新事件或新角色。
+3. eventIds 表示该角色明确参与的事件：依据角色 description、identity、已有 eventIds/timeline、以及事件文本中的姓名或明确指代。不确定就不写。
+4. timeline 只补角色在事件中的具体经历，尽量带 eventId；同一事件不要重复，已有时间点不要重复。
+5. relations 只补文本中明显存在的关系（共同阵营、敌对、亲属、师徒、上下级等）；targetId 必须存在且不能是自己，不确定就不写。
+6. 不要修改事件本身，不要修改角色姓名与身份；你只做增量补充。
+7. 没有可补充内容时，characters 返回空数组，在 reply 里说明。`;
 
 /* ------------------------------------------------------------------ 变更 */
 
@@ -825,6 +1101,75 @@ function mergeEntry(existing, data, target) {
   };
 }
 
+function mergeByKey(existing, incoming, keyOf, cap) {
+  const out = [...existing];
+  const seen = new Set(existing.map((item) => keyOf(item)));
+  for (const item of incoming) {
+    const key = keyOf(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+function characterFromData(data) {
+  return normalizeCharacters([data])[0];
+}
+
+function findCharacter(world, ref) {
+  if (!ref) return null;
+  return world.characters.find((character) => character.id === ref)
+    || world.characters.find((character) => character.name === ref)
+    || null;
+}
+
+function mergeCharacter(existing, data) {
+  const source = data && typeof data === 'object' ? data : {};
+  const merged = {
+    ...existing,
+    ...source,
+    id: existing.id,
+    name: cleanText(source.name, LIMITS.characterName) || existing.name,
+    image: Object.hasOwn(source, 'image') ? imageName(source.image) : existing.image,
+    relatedEntries: mergeByKey(
+      existing.relatedEntries,
+      normalizeRelatedEntries(source.relatedEntries ?? source.related),
+      (item) => `${item.kind}:${item.id}`,
+      LIMITS.characterRelated,
+    ),
+    timeline: mergeByKey(
+      existing.timeline,
+      normalizeCharacterTimeline(source.timeline ?? source.points),
+      (item) => item.eventId || `${item.time}|${item.title}`,
+      LIMITS.characterTimelineCount,
+    ),
+    eventIds: unique([
+      ...existing.eventIds,
+      ...asArray(source.eventIds).map((id) => validId(id, ['ev'])).filter(Boolean),
+    ]).slice(0, LIMITS.characterEventIds),
+    relations: mergeByKey(
+      existing.relations,
+      normalizeRelations(source.relations ?? source.relationships),
+      (item) => `${item.targetId || item.targetName}|${item.type}`,
+      LIMITS.characterRelations,
+    ),
+  };
+  return normalizeCharacters([merged])[0];
+}
+
+function mergeCharacterList(existing, incoming) {
+  const out = [...existing];
+  for (const character of incoming) {
+    const index = out.findIndex((item) => item.id === character.id || item.name === character.name);
+    if (index >= 0) out[index] = mergeCharacter(out[index], character);
+    else out.push(character);
+    if (out.length >= LIMITS.characterCount) break;
+  }
+  return out;
+}
+
 function labelOfTarget(target) {
   return {
     event: '事件',
@@ -832,6 +1177,9 @@ function labelOfTarget(target) {
     composition: '构成',
     setting: '设定',
     marker: '地图标注',
+    character: '角色',
+    charactertimeline: '角色时间点',
+    characterrelation: '角色关系',
   }[target] ?? target;
 }
 
@@ -867,6 +1215,96 @@ function applyChanges(rawWorld, changes) {
       } else {
         world[field] = text.slice(0, LIMITS[field] ?? LIMITS.entryContent);
         applied.push(`更新${scalarLabel(field)}`);
+      }
+      continue;
+    }
+
+    if (target === 'character') {
+      if (action === 'add') {
+        const character = characterFromData(data);
+        if (!character.name || character.name === '未命名角色') {
+          warnings.push('新增角色缺少姓名，已跳过');
+          continue;
+        }
+        const duplicate = world.characters.find((item) => item.name === character.name);
+        if (duplicate) {
+          world.characters = world.characters.map((item) => (item.id === duplicate.id ? mergeCharacter(item, data) : item));
+          applied.push(`更新角色「${character.name}」`);
+        } else {
+          world.characters.push(character);
+          applied.push(`新增角色「${character.name}」`);
+        }
+        continue;
+      }
+      const index = world.characters.findIndex((item) => item.id === id);
+      if (index < 0) {
+        warnings.push(`找不到要${action === 'remove' ? '删除' : '更新'}的角色：${id || '(缺少 id)'}`);
+        continue;
+      }
+      if (action === 'remove') {
+        const name = world.characters[index].name;
+        world.characters.splice(index, 1);
+        applied.push(`删除角色「${name}」`);
+      } else if (action === 'update') {
+        world.characters[index] = mergeCharacter(world.characters[index], data);
+        applied.push(`更新角色「${world.characters[index].name}」`);
+      } else {
+        warnings.push(`角色不支持动作：${action}`);
+      }
+      continue;
+    }
+
+    if (target === 'charactertimeline') {
+      const character = findCharacter(world, data.characterId ?? data.character ?? id);
+      if (!character) {
+        warnings.push('找不到要添加时间点的角色');
+        continue;
+      }
+      if (action === 'add') {
+        const point = normalizeCharacterTimeline([{
+          time: data.time ?? data.at,
+          title: data.title ?? data.name,
+          description: data.description ?? data.content,
+          eventId: data.eventId,
+        }])[0];
+        const duplicate = character.timeline.some((item) => (point.eventId && item.eventId === point.eventId) || (item.time === point.time && item.title === point.title));
+        if (duplicate) warnings.push(`角色「${character.name}」已有相同时间点`);
+        else {
+          character.timeline = sortCharacterPoints([...character.timeline, point]);
+          applied.push(`为角色「${character.name}」新增时间点「${point.title}」`);
+        }
+      } else if (action === 'remove') {
+        const pointId = data.pointId ?? id;
+        const before = character.timeline.length;
+        character.timeline = character.timeline.filter((item) => item.id !== pointId);
+        if (character.timeline.length < before) applied.push(`删除角色「${character.name}」的时间点`);
+        else warnings.push('找不到要删除的角色时间点');
+      } else {
+        warnings.push(`角色时间点不支持动作：${action}`);
+      }
+      continue;
+    }
+
+    if (target === 'characterrelation') {
+      const from = findCharacter(world, data.fromId ?? data.characterId ?? id);
+      const targetCharacter = findCharacter(world, data.targetId ?? data.target);
+      if (!from || !targetCharacter || from.id === targetCharacter.id) {
+        warnings.push('角色关系需要两个不同的、已存在的角色');
+        continue;
+      }
+      if (action === 'remove') {
+        const before = from.relations.length;
+        from.relations = from.relations.filter((item) => !(item.targetId === targetCharacter.id && (!data.type || item.type === data.type)));
+        if (from.relations.length < before) applied.push(`删除角色关系「${from.name} — ${targetCharacter.name}」`);
+        else warnings.push('找不到要删除的角色关系');
+      } else {
+        const type = cleanText(data.type, 40) || '其他';
+        const exists = from.relations.some((item) => item.targetId === targetCharacter.id && item.type === type);
+        if (exists) warnings.push('这条角色关系已经存在');
+        else {
+          from.relations.push({ id: newId('rel'), targetId: targetCharacter.id, type, note: cleanText(data.note, 800), createdAt: now(), updatedAt: now() });
+          applied.push(`新增角色关系「${from.name} — ${targetCharacter.name}」`);
+        }
       }
       continue;
     }
@@ -930,6 +1368,11 @@ function replaceWorldContent(base, incoming) {
     fallbackName: base.name,
   });
   merged.map = { ...merged.map, image: base.map?.image || '' };
+  const baseImages = new Map(base.characters.map((character) => [character.name, character.image]));
+  merged.characters = merged.characters.map((character) => ({
+    ...character,
+    image: character.image || baseImages.get(character.name) || '',
+  }));
   merged.rev = base.rev;
   merged.updatedAt = now();
   return merged;
@@ -953,6 +1396,7 @@ function fillMissing(base, incoming) {
   next.events = sortEvents(mergeEntries(next.events, normalizeEvents(source.events), (item) => `${item.time}|${item.title}`, LIMITS.eventCount));
   next.composition = mergeEntries(next.composition, normalizeEntries(source.composition, 'cp', '未命名构成'), (item) => item.title, LIMITS.compositionCount);
   next.settings = mergeEntries(next.settings, normalizeEntries(source.settings, 'se', '未命名设定'), (item) => item.title, LIMITS.settingsCount);
+  next.characters = mergeCharacterList(next.characters, normalizeCharacters(source.characters));
   if (!next.map.notes) next.map.notes = cleanText(source.map?.notes, LIMITS.entryContent);
   next.map.markers = mergeEntries(next.map.markers, normalizeMarkers(source.map?.markers), (item) => item.name, LIMITS.markerCount);
   next.updatedAt = now();
@@ -1000,6 +1444,20 @@ function exportWorld(world, format, includeChat = false) {
       events: world.events.map(({ id, time, title, description, impact }) => ({ id, time, title, description, impact })),
       composition: world.composition.map(({ id, title, content }) => ({ id, title, content })),
       settings: world.settings.map(({ id, title, content }) => ({ id, title, content })),
+      characters: world.characters.map((character) => ({
+        id: character.id,
+        name: character.name,
+        role: character.role,
+        identity: character.identity,
+        species: character.species,
+        nonHuman: character.nonHuman,
+        npc: character.npc,
+        description: character.description,
+        relatedEntries: character.relatedEntries.map(({ kind, id, label }) => ({ kind, id, label })),
+        timeline: character.timeline.map(({ id, time, title, description, eventId, source }) => ({ id, time, title, description, eventId, source })),
+        eventIds: character.eventIds,
+        relations: character.relations.map(({ id, targetId, type, note }) => ({ id, targetId, type, note })),
+      })),
       map: { notes: world.map.notes, markers: world.map.markers.map(({ id, name, x, y, note }) => ({ id, name, x, y, note })) },
       exportedAt: new Date().toISOString(),
     };
@@ -1031,6 +1489,42 @@ function exportWorld(world, format, includeChat = false) {
         lines.push(`### ${index + 1}. ${event.title}${event.time ? ` — ${event.time}` : ''}`, '');
         if (event.description) lines.push(event.description, '');
         if (event.impact) lines.push(`**影响**：${event.impact}`, '');
+      });
+    }
+    if (world.characters.length) {
+      lines.push('## 重要角色', '');
+      const eventById = new Map(world.events.map((event) => [event.id, event]));
+      const charById = new Map(world.characters.map((character) => [character.id, character]));
+      world.characters.forEach((character) => {
+        lines.push(`### ${character.name}${character.npc ? '（剧情 NPC）' : ''}`, '');
+        lines.push(`- **角色**：${character.role || '未填写'}`);
+        lines.push(`- **身份**：${character.identity || '未填写'}`);
+        if (character.nonHuman || character.species) lines.push(`- **物种**：${character.species || '未填写'}`);
+        if (character.image) lines.push('- **角色图**：已上传');
+        lines.push('');
+        if (character.description) lines.push(character.description, '');
+        const relations = character.relations.map((relation) => {
+          const target = charById.get(relation.targetId);
+          return target ? `- **${target.name}**（${relation.type}）${relation.note ? `：${relation.note}` : ''}` : null;
+        }).filter(Boolean);
+        if (relations.length) lines.push('**关系**', '', ...relations, '');
+        if (character.eventIds.length) {
+          lines.push('**参与事件**', '');
+          character.eventIds.map((id) => eventById.get(id)).filter(Boolean).forEach((event) => {
+            lines.push(`- ${event.time ? `[${event.time}] ` : ''}${event.title}`);
+          });
+          lines.push('');
+        }
+        if (character.timeline.length) {
+          lines.push('**角色时间线**', '');
+          character.timeline.forEach((point) => {
+            lines.push(`- ${point.time ? `[${point.time}] ` : ''}${point.title}${point.description ? `：${point.description}` : ''}`);
+          });
+          lines.push('');
+        }
+        if (character.relatedEntries.length) {
+          lines.push(`**关联条目**：${character.relatedEntries.map((ref) => ref.label).filter(Boolean).join('、')}`, '');
+        }
       });
     }
     if (world.composition.length) {
@@ -1079,6 +1573,28 @@ function exportWorld(world, format, includeChat = false) {
       if (event.impact) lines.push(`   影响：${event.impact}`);
     });
     lines.push('');
+  }
+  if (world.characters.length) {
+    lines.push('【重要角色】');
+    const eventById = new Map(world.events.map((event) => [event.id, event]));
+    const charById = new Map(world.characters.map((character) => [character.id, character]));
+    world.characters.forEach((character) => {
+      lines.push(`◆ ${character.name}${character.npc ? '（剧情 NPC）' : ''}`);
+      lines.push(`  角色：${character.role || '未填写'}｜身份：${character.identity || '未填写'}${character.nonHuman || character.species ? `｜物种：${character.species || '未填写'}` : ''}`);
+      if (character.description) lines.push(character.description);
+      character.relations.forEach((relation) => {
+        const target = charById.get(relation.targetId);
+        if (target) lines.push(`  关系：${target.name}（${relation.type}）${relation.note ? ` — ${relation.note}` : ''}`);
+      });
+      character.eventIds.map((id) => eventById.get(id)).filter(Boolean).forEach((event) => {
+        lines.push(`  参与事件：${event.time ? `[${event.time}] ` : ''}${event.title}`);
+      });
+      character.timeline.forEach((point) => {
+        lines.push(`  时间线：${point.time ? `[${point.time}] ` : ''}${point.title}${point.description ? ` — ${point.description}` : ''}`);
+      });
+      if (character.relatedEntries.length) lines.push(`  关联条目：${character.relatedEntries.map((ref) => ref.label).filter(Boolean).join('、')}`);
+      lines.push('');
+    });
   }
   if (world.composition.length) {
     lines.push('【主要构成】');
@@ -1255,9 +1771,232 @@ async function saveWorldWithConflict(id, world, expectedRev) {
     next.rev = existing.rev + 1;
     next.updatedAt = now();
     await writeWorld(next);
+    await cleanupCharacterImages(id, existing, next).catch(() => {});
     cacheFromWorld(next);
     return next;
   });
+}
+
+/* ------------------------------------------------------------- 时间轴整合 */
+
+function eventMentionsCharacter(event, character) {
+  const name = cleanText(character.name, LIMITS.characterName);
+  if (name.length < 2) return false;
+  const haystack = `${event.title}\n${event.description}\n${event.impact}`;
+  return haystack.includes(name);
+}
+
+function participatedEventIds(world, character) {
+  const ids = new Set(character.eventIds);
+  for (const event of world.events) {
+    if (eventMentionsCharacter(event, character)) ids.add(event.id);
+  }
+  return [...ids];
+}
+
+/** 供时间轴 UI 与工具读取的事实视图：事件参与、角色时间点、关系对象。 */
+function timelineFacts(world) {
+  const byId = new Map(world.characters.map((character) => [character.id, character]));
+  const participation = new Map(world.characters.map((character) => [character.id, new Set(participatedEventIds(world, character))]));
+  const events = world.events.map((event) => ({
+    id: event.id,
+    time: event.time,
+    title: event.title,
+    description: event.description,
+    impact: event.impact,
+    year: parseYear(event.time),
+    participants: world.characters
+      .filter((character) => participation.get(character.id)?.has(event.id))
+      .map((character) => character.id),
+  }));
+  const eventById = new Map(events.map((event) => [event.id, event]));
+  const characters = world.characters.map((character) => {
+    const eventIds = [...(participation.get(character.id) || [])];
+    const points = [...character.timeline];
+    for (const eventId of eventIds) {
+      const event = eventById.get(eventId);
+      if (!event) continue;
+      if (points.some((point) => point.eventId === eventId || (point.time === event.time && point.title === event.title))) continue;
+      points.push({
+        id: `derived_${character.id}_${eventId}`,
+        time: event.time,
+        title: event.title,
+        description: `参与事件：${event.title}`,
+        eventId,
+        source: 'derived',
+        year: event.year,
+      });
+    }
+    points.sort((left, right) => {
+      const ly = left.year ?? parseYear(left.time) ?? Number.POSITIVE_INFINITY;
+      const ry = right.year ?? parseYear(right.time) ?? Number.POSITIVE_INFINITY;
+      return ly - ry;
+    });
+    return {
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      identity: character.identity,
+      species: character.species,
+      nonHuman: character.nonHuman,
+      npc: character.npc,
+      description: character.description,
+      image: character.image,
+      eventIds,
+      points,
+      relations: character.relations.map((relation) => {
+        const target = byId.get(relation.targetId);
+        return {
+          id: relation.id,
+          targetId: relation.targetId,
+          targetName: target?.name || '',
+          type: relation.type,
+          note: relation.note,
+        };
+      }).filter((relation) => relation.targetName),
+    };
+  });
+  return { events, characters };
+}
+
+/** 从世界观内已有的事件文本与角色信息补齐时间轴事实；不调用模型，不改名、不改事件。 */
+function integrateTimelineLocal(world) {
+  const applied = [];
+  const byId = new Map(world.events.map((event) => [event.id, event]));
+  for (const character of world.characters) {
+    const beforeIds = new Set(character.eventIds);
+    const ids = new Set(participatedEventIds(world, character));
+    const addedIds = [...ids].filter((id) => !beforeIds.has(id) && byId.has(id));
+    if (addedIds.length) applied.push(`角色「${character.name}」关联 ${addedIds.length} 个参与事件`);
+    character.eventIds = [...ids].filter((id) => byId.has(id));
+    let addedPoints = 0;
+    for (const eventId of character.eventIds) {
+      const event = byId.get(eventId);
+      if (!event) continue;
+      if (character.timeline.some((point) => point.eventId === eventId || (point.time === event.time && point.title === event.title))) continue;
+      character.timeline.push({
+        id: newId('tp'),
+        time: event.time,
+        title: event.title,
+        description: cleanText(`参与事件：${event.description || event.title}`, 500),
+        eventId,
+        source: 'auto',
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      addedPoints += 1;
+    }
+    character.timeline = sortCharacterPoints(character.timeline);
+    if (addedPoints) applied.push(`角色「${character.name}」补 ${addedPoints} 个时间点`);
+  }
+  return { world, applied };
+}
+
+function applyTimelineIntegration(world, data) {
+  const applied = [];
+  const warnings = [];
+  const byId = new Map(world.characters.map((character) => [character.id, character]));
+  const byName = new Map(world.characters.map((character) => [character.name, character]));
+  const eventIds = new Set(world.events.map((event) => event.id));
+
+  for (const item of asArray(data.characters)) {
+    const character = byId.get(item?.id) || byName.get(cleanText(item?.name, LIMITS.characterName));
+    if (!character) {
+      warnings.push(`忽略了不存在的角色：${item?.id || item?.name || '(空)'}`);
+      continue;
+    }
+    let addedEvents = 0;
+    let addedPoints = 0;
+    let addedRelations = 0;
+    const freshEventIds = asArray(item.eventIds).map((id) => validId(id, ['ev'])).filter((id) => id && eventIds.has(id));
+    for (const id of freshEventIds) {
+      if (!character.eventIds.includes(id)) {
+        character.eventIds.push(id);
+        addedEvents += 1;
+      }
+    }
+    for (const rawPoint of asArray(item.timeline)) {
+      const point = normalizeCharacterTimeline([{ ...rawPoint, source: 'ai' }])[0];
+      const duplicate = character.timeline.some((existing) => (point.eventId && existing.eventId === point.eventId) || (existing.time === point.time && existing.title === point.title));
+      if (duplicate) continue;
+      character.timeline.push(point);
+      addedPoints += 1;
+    }
+    for (const rawRelation of asArray(item.relations)) {
+      const targetId = validId(rawRelation?.targetId, ['ch']);
+      if (!targetId || targetId === character.id || !byId.has(targetId)) {
+        warnings.push(`角色「${character.name}」的关系对象无效，已忽略`);
+        continue;
+      }
+      const type = cleanText(rawRelation.type, 40) || '其他';
+      if (character.relations.some((relation) => relation.targetId === targetId && relation.type === type)) continue;
+      character.relations.push({
+        id: newId('rel'),
+        targetId,
+        type,
+        note: cleanText(rawRelation.note, 800),
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      addedRelations += 1;
+    }
+    character.timeline = sortCharacterPoints(character.timeline);
+    if (addedEvents) applied.push(`角色「${character.name}」关联 ${addedEvents} 个参与事件`);
+    if (addedPoints) applied.push(`角色「${character.name}」新增 ${addedPoints} 个时间点`);
+    if (addedRelations) applied.push(`角色「${character.name}」新增 ${addedRelations} 条关系`);
+  }
+  return { world, applied, warnings };
+}
+
+async function integrateTimelineAi(ctx, payload, signal) {
+  let world = await resolveWorldRef(payload.id ?? payload.worldId);
+  const context = {
+    events: world.events.slice(0, 200).map((event) => ({
+      id: event.id, time: event.time, title: event.title,
+      description: cut(event.description, 800), impact: cut(event.impact, 400),
+    })),
+    characters: world.characters.slice(0, 60).map((character) => ({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      identity: character.identity,
+      species: character.species,
+      npc: character.npc,
+      description: cut(character.description, 800),
+      eventIds: character.eventIds,
+      timeline: character.timeline.slice(0, 30).map((point) => ({
+        time: point.time, title: point.title, description: cut(point.description, 500), eventId: point.eventId,
+      })),
+      relations: character.relations.map((relation) => ({
+        targetId: relation.targetId, type: relation.type, note: cut(relation.note, 400),
+      })),
+    })),
+  };
+  const out = await runModel(ctx, {
+    system: AI_TIMELINE_SYSTEM,
+    prompt: `请为以下世界观整合时间轴事实：\n${JSON.stringify(context)}\n只输出 JSON 对象。`,
+    maxTokens: 8192,
+    temperature: 0.3,
+    signal,
+  });
+  const data = parseModelJson(out.text, '时间轴整合');
+  const reply = cleanText(data.reply, 3000) || '时间轴已整合。';
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const latest = attempt === 0 ? world : await requireWorld(world.id);
+    world = latest;
+    const result = applyTimelineIntegration(latest, data);
+    if (!result.applied.length) {
+      return { world: latest, rev: latest.rev, state: await getState(), reply, applied: [], warnings: result.warnings, usage: out.usage };
+    }
+    try {
+      const saved = await saveWorldWithConflict(latest.id, result.world, latest.rev);
+      return { world: saved, rev: saved.rev, state: await getState(), reply, applied: result.applied, warnings: result.warnings, usage: out.usage };
+    } catch (error) {
+      if (error.code !== 'worldbuilding/conflict' || attempt === 2) throw error;
+    }
+  }
+  throw new AppError('worldbuilding/conflict', '世界观刚被其他操作修改，请重试');
 }
 
 /* ---------------------------------------------------------------- 工具实现 */
@@ -1279,7 +2018,7 @@ function toolList() {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['id', 'name', 'type', 'era', 'completeness', 'events'],
+              required: ['id', 'name', 'type', 'era', 'completeness', 'events', 'characters'],
               properties: {
                 id: { type: 'string' },
                 name: { type: 'string' },
@@ -1287,6 +2026,7 @@ function toolList() {
                 era: { type: 'string' },
                 completeness: { type: 'integer' },
                 events: { type: 'integer' },
+                characters: { type: 'integer' },
               },
             },
           },
@@ -1305,6 +2045,7 @@ function toolList() {
           era: world.era,
           completeness: world.completeness,
           events: world.counts.events,
+          characters: world.counts.characters,
         })),
       };
     },
@@ -1314,7 +2055,7 @@ function toolList() {
 function renderWorldList(value) {
   const lines = [`共 ${value.worlds.length} 个世界观${value.activeId ? `，当前激活 id：${value.activeId}` : ''}。`];
   for (const world of value.worlds) {
-    lines.push(`- ${world.name}（id: ${world.id}）｜类型：${world.type || '未填写'}｜时代：${world.era || '未填写'}｜完整度 ${world.completeness}%｜事件 ${world.events} 条${world.id === value.activeId ? '｜当前' : ''}`);
+    lines.push(`- ${world.name}（id: ${world.id}）｜类型：${world.type || '未填写'}｜时代：${world.era || '未填写'}｜完整度 ${world.completeness}%｜事件 ${world.events} 条｜角色 ${world.characters} 个${world.id === value.activeId ? '｜当前' : ''}`);
   }
   return lines.join('\n');
 }
@@ -1330,8 +2071,8 @@ function toolRead() {
         world: { type: 'string', description: '世界观 id 或名称；省略表示当前激活的世界观' },
         section: {
           type: 'string',
-          description: '只读取某一部分：overview / timeline / events / composition / settings / map / all（默认 all）',
-          enum: ['overview', 'timeline', 'events', 'composition', 'settings', 'map', 'all'],
+          description: '只读取某一部分：overview / timeline / events / composition / settings / map / characters / axis / all（默认 all）',
+          enum: ['overview', 'timeline', 'events', 'composition', 'settings', 'map', 'characters', 'axis', 'all'],
         },
       },
     },
@@ -1381,6 +2122,8 @@ function sectionWorld(world, section) {
   if (section === 'composition') return { id: world.id, name: world.name, composition: world.composition };
   if (section === 'settings') return { id: world.id, name: world.name, settings: world.settings };
   if (section === 'map') return { id: world.id, name: world.name, map: world.map };
+  if (section === 'characters') return { id: world.id, name: world.name, characters: world.characters };
+  if (section === 'axis') return { id: world.id, name: world.name, facts: timelineFacts(world) };
   return {
     ...overview,
     timeline: world.timeline,
@@ -1388,6 +2131,7 @@ function sectionWorld(world, section) {
     composition: world.composition,
     settings: world.settings,
     map: world.map,
+    characters: world.characters,
   };
 }
 
@@ -1411,8 +2155,8 @@ function toolUpdate() {
             properties: {
               target: {
                 type: 'string',
-                description: '目标：name/type/style/era/eraNote/summary/mapNotes（标量），或 event/timeline/composition/setting/marker（条目）',
-                enum: ['name', 'type', 'style', 'era', 'eraNote', 'summary', 'mapNotes', 'event', 'timeline', 'composition', 'setting', 'marker'],
+                description: '目标：name/type/style/era/eraNote/summary/mapNotes（标量）；event/timeline/composition/setting/marker（条目）；character（角色）、characterTimeline（角色时间点）、characterRelation（角色关系）',
+                enum: ['name', 'type', 'style', 'era', 'eraNote', 'summary', 'mapNotes', 'event', 'timeline', 'composition', 'setting', 'marker', 'character', 'characterTimeline', 'characterRelation'],
               },
               action: {
                 type: 'string',
@@ -1423,7 +2167,7 @@ function toolUpdate() {
               text: { type: 'string', description: 'set 标量时的新文本' },
               data: {
                 type: 'object',
-                description: '条目内容。event: time/title/description/impact；timeline: name/span/description；composition/setting: title/content；marker: name/x/y/note（x/y 为 0-1）',
+                description: '条目内容。event: time/title/description/impact；timeline: name/span/description；composition/setting: title/content；marker: name/x/y/note（x/y 为 0-1）；character: name/role/identity/species/nonHuman/npc/description/timeline/relations；characterTimeline: characterId/time/title/description/eventId；characterRelation: fromId/target/type/note',
                 additionalProperties: true,
               },
             },
@@ -1435,7 +2179,7 @@ function toolUpdate() {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['worldId', 'name', 'applied', 'warnings', 'events', 'composition', 'settings'],
+        required: ['worldId', 'name', 'applied', 'warnings', 'events', 'composition', 'settings', 'characters'],
         properties: {
           worldId: { type: 'string' },
           name: { type: 'string' },
@@ -1444,6 +2188,7 @@ function toolUpdate() {
           events: { type: 'integer' },
           composition: { type: 'integer' },
           settings: { type: 'integer' },
+          characters: { type: 'integer' },
         },
       },
       render: (_args, value) => [{
@@ -1473,6 +2218,7 @@ function toolUpdate() {
             events: saved.events.length,
             composition: saved.composition.length,
             settings: saved.settings.length,
+            characters: saved.characters.length,
           };
         } catch (error) {
           if (error.code !== 'worldbuilding/conflict' || attempt === 2) throw error;
@@ -1543,7 +2289,7 @@ function cacheFromWorld(world) {
   promptCache = {
     at: now(),
     activeId: world.id,
-    text: `当前激活的世界观：《${world.name}》｜类型：${world.type || '未填写'}｜时代：${world.era || '未填写'}｜事件 ${world.events.length} 条，主要构成 ${world.composition.length} 条，基本设定 ${world.settings.length} 条｜完整度 ${completenessOf(world)}%。`,
+    text: `当前激活的世界观：《${world.name}》｜类型：${world.type || '未填写'}｜时代：${world.era || '未填写'}｜事件 ${world.events.length} 条，重要角色 ${world.characters.length} 个，主要构成 ${world.composition.length} 条，基本设定 ${world.settings.length} 条｜完整度 ${completenessOf(world)}%。`,
   };
 }
 
@@ -1568,9 +2314,9 @@ function worldbuildingPromptSection() {
 用户可以在「世界观工坊」里管理多个彼此隔离的世界观。需要读取或补充世界观时，使用这些工具：
 - worldbuilding_list：列出全部世界观；
 - worldbuilding_read：读取世界观（默认当前激活的那个，可指定 world 与 section）；
-- worldbuilding_update：增量增补/修改（事件、时代、主要构成、基本设定、地图标注、类型、风格、总览）；
+- worldbuilding_update：增量增补/修改（事件、时代、重要角色、角色关系、角色时间点、主要构成、基本设定、地图标注、类型、风格、总览）；
 - worldbuilding_create：新建世界观。
-用户说「补充当前世界观」「把某某写进世界观」时，先 worldbuilding_read 确认已有内容，再 worldbuilding_update 写入；不要编造并覆盖用户已有的设定。事件会按时间自动排序。
+用户说「补充当前世界观」「把某某写进世界观」「加一个角色」时，先 worldbuilding_read 确认已有内容，再 worldbuilding_update 写入；不要编造并覆盖用户已有的设定。事件与角色时间点会按时间自动排序。
 ${promptCache.text}`;
 }
 
@@ -1689,6 +2435,68 @@ async function route(ctx, endpoint, payload, signal) {
       const saved = await saveWorldWithConflict(world.id, next, world.rev);
       return { world: saved, rev: saved.rev };
     }
+    case 'character/images': {
+      const world = await resolveWorldRef(input.id);
+      const hasFilter = Array.isArray(input.ids);
+      const wanted = new Set(hasFilter ? input.ids.map((id) => validId(id, ['ch'])).filter(Boolean) : []);
+      const images = {};
+      for (const character of world.characters) {
+        if (!character.image) continue;
+        if (hasFilter && !wanted.has(character.id)) continue;
+        const dataUrl = await readCharacterImage(world.id, character.image);
+        if (dataUrl) images[character.id] = dataUrl;
+      }
+      return { images };
+    }
+    case 'character/image/upload': {
+      const world = await resolveWorldRef(input.id);
+      const characterId = cleanText(input.characterId, 80);
+      if (!validId(characterId, ['ch'])) throw new AppError('worldbuilding/bad-character', '角色 id 不合法');
+      const match = /^data:(image\/(png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/.exec(String(input.dataUrl ?? '').trim());
+      if (!match) throw new AppError('worldbuilding/bad-image', '只支持 PNG / JPEG / WebP / GIF 图片');
+      const extension = match[2] === 'jpeg' ? 'jpg' : match[2];
+      const bytes = Buffer.from(match[3], 'base64');
+      if (bytes.byteLength === 0) throw new AppError('worldbuilding/bad-image', '图片内容为空');
+      if (bytes.byteLength > LIMITS.characterImageBytes) throw new AppError('worldbuilding/image-too-large', '角色图片不能超过 2MB');
+      const dir = characterImageDir(world.id);
+      await mkdir(dir, { recursive: true });
+      const name = `${characterId}-${now().toString(36)}${Math.random().toString(16).slice(2, 6)}.${extension}`;
+      const temp = join(dir, `${name}.${now()}.tmp`);
+      await writeFile(temp, bytes);
+      await rename(temp, join(dir, name));
+      return { image: name, dataUrl: input.dataUrl };
+    }
+    case 'character/image/remove': {
+      const world = await resolveWorldRef(input.id);
+      const characterId = cleanText(input.characterId, 80);
+      if (!validId(characterId, ['ch'])) throw new AppError('worldbuilding/bad-character', '角色 id 不合法');
+      await removeCharacterFiles(world.id, characterId);
+      return { removed: true };
+    }
+    case 'timeline/facts': {
+      const world = await resolveWorldRef(input.id);
+      return { facts: timelineFacts(world), rev: world.rev };
+    }
+    case 'timeline/integrate': {
+      let world = await resolveWorldRef(input.id);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const latest = attempt === 0 ? world : await requireWorld(world.id);
+        world = latest;
+        const result = integrateTimelineLocal(latest);
+        if (!result.applied.length) {
+          return { world: latest, rev: latest.rev, state: await getState(), applied: [], warnings: [] };
+        }
+        try {
+          const saved = await saveWorldWithConflict(latest.id, result.world, latest.rev);
+          return { world: saved, rev: saved.rev, state: await getState(), applied: result.applied, warnings: [] };
+        } catch (error) {
+          if (error.code !== 'worldbuilding/conflict' || attempt === 2) throw error;
+        }
+      }
+      throw new AppError('worldbuilding/conflict', '世界观刚被其他操作修改，请重试');
+    }
+    case 'ai/timeline':
+      return integrateTimelineAi(ctx, input, signal);
     case 'ai/generate':
       return generateWorld(ctx, input, signal);
     case 'ai/import':

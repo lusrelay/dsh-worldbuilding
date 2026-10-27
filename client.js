@@ -10,7 +10,9 @@ window.__ModuleLoader__.load({
       { key: 'overview', label: '概览', glyph: '◈' },
       { key: 'type', label: '世界类型', glyph: '✦' },
       { key: 'timeline', label: '时间线', glyph: '⟳' },
+      { key: 'axis', label: '时间轴', glyph: '⌁' },
       { key: 'events', label: '重大事件', glyph: '⚑' },
+      { key: 'characters', label: '重要角色', glyph: '☾' },
       { key: 'composition', label: '主要构成', glyph: '❖' },
       { key: 'map', label: '世界地图', glyph: '⌖' },
       { key: 'settings', label: '基本设定', glyph: '⚖' },
@@ -23,8 +25,10 @@ window.__ModuleLoader__.load({
       '补全缺失或过薄的部分，保持已有设定与专有名词不变。',
       '增加一个与现有势力对立的新势力，并补一条它崛起的历史事件。',
       '增加三条时间上连贯的重大事件，制造一个尚未解决的危机。',
-      '检查现有设定之间的冲突，列出问题并给出修改建议。',
+      '补充 3-5 个重要角色或剧情 NPC，写清身份、物种与彼此关系。',
     ];
+    const CHARACTER_ROLES = ['主角', '重要配角', '反派', '剧情 NPC', '导师', '关键路人', '其他'];
+    const RELATION_TYPES = ['盟友', '敌对', '亲属', '师徒', '恋人', '上下级', '竞争', '旧识', '其他'];
     const CSS = `
 .wb-root{--wb-accent:var(--dsw-alias-brand-primary,#4d6bfe);--wb-line:var(--dsw-alias-border-l1,rgba(128,128,128,.2));--wb-line-strong:var(--dsw-alias-border-l2,rgba(128,128,128,.36));--wb-card:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.06));--wb-card-2:var(--dsw-alias-bg-layer-2,rgba(128,128,128,.1));--wb-overlay:var(--dsw-alias-bg-overlay,#fff);--wb-text:var(--dsw-alias-label-primary,#18181b);--wb-dim:var(--dsw-alias-label-secondary,#6b7280);--wb-faint:var(--dsw-alias-label-secondary,#8b93a1);--wb-danger:var(--dsw-alias-state-error-primary,#e5484d);--wb-ok:var(--dsw-alias-state-success-primary,#2f9e63);--wb-warn:var(--dsw-alias-state-warn-primary,#c27c0e);position:relative;height:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--dsw-alias-bg-base,#fff);color:var(--wb-text);font-size:14px;line-height:1.65}
 .wb-root *{box-sizing:border-box}
@@ -68,6 +72,7 @@ window.__ModuleLoader__.load({
 .wb-iconbtn:disabled{opacity:.4;cursor:default}
 .wb-input,.wb-area{width:100%;border:.5px solid var(--wb-line-strong);border-radius:12px;background:var(--wb-card);color:var(--wb-text);font:inherit;font-size:13.5px;line-height:1.6;padding:9px 11px;outline:none;transition:border-color .15s}
 .wb-input:focus,.wb-area:focus{border-color:var(--wb-accent)}
+.wb-input:disabled,.wb-area:disabled{opacity:.55;cursor:not-allowed}
 .wb-area{resize:vertical;min-height:130px;font-family:inherit}
 .wb-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.7}
 .wb-card{border:.5px solid var(--wb-line);border-radius:14px;padding:14px;background:var(--wb-card)}
@@ -205,7 +210,114 @@ window.__ModuleLoader__.load({
 .wb-usage{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--wb-faint);font-variant-numeric:tabular-nums;margin-top:6px}
 .wb-preview{width:100%;min-height:260px;max-height:44vh;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.7;white-space:pre;overflow:auto}
 .wb-overflow{overflow-wrap:anywhere}
+
+.wb-tag--npc{color:var(--wb-accent);background:color-mix(in srgb,var(--wb-accent) 12%,transparent)}
+.wb-tag--species{color:var(--wb-warn);background:color-mix(in srgb,var(--wb-warn) 12%,transparent)}
+.wb-char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+.wb-char-card{display:flex;gap:10px;align-items:flex-start;border:.5px solid var(--wb-line);border-radius:14px;background:var(--wb-card);padding:12px;cursor:pointer;min-width:0;transition:border-color .15s,background .15s}
+.wb-char-card:hover{border-color:var(--wb-accent);background:color-mix(in srgb,var(--wb-accent) 4%,var(--wb-card))}
+.wb-char-avatar{width:56px;height:56px;border-radius:14px;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--wb-accent) 10%,var(--wb-card));color:var(--wb-accent);font-weight:600;font-size:20px}
+.wb-char-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.wb-char-avatar--sm{width:32px;height:32px;border-radius:10px;font-size:13px}
+.wb-char-avatar--md{width:64px;height:64px;border-radius:16px;font-size:22px}
+.wb-char-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.wb-char-name{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:14.5px;font-weight:600;line-height:1.4}
+.wb-char-sub{font-size:12px;color:var(--wb-dim);overflow-wrap:anywhere}
+.wb-char-meta{font-size:11px;color:var(--wb-faint);overflow-wrap:anywhere}
+.wb-char-desc{font-size:12px;color:var(--wb-dim);line-height:1.55;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.wb-char-actions{display:flex;flex-direction:column;gap:0;flex:none}
+.wb-char-editor-top{display:flex;gap:14px;align-items:flex-start}
+.wb-char-photo{flex:0 0 150px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.wb-char-photo > img,.wb-char-photo > span:first-child{width:150px;height:150px;border-radius:16px;object-fit:cover;display:flex;align-items:center;justify-content:center;border:.5px solid var(--wb-line);background:color-mix(in srgb,var(--wb-accent) 9%,var(--wb-card));color:var(--wb-accent);font-size:40px;font-weight:600}
+.wb-char-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.wb-check-list{max-height:170px;overflow:auto;border:.5px solid var(--wb-line);border-radius:12px;padding:6px 8px;background:var(--wb-card);display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
+.wb-checkrow{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:3px 4px;border-radius:6px;cursor:pointer;color:var(--wb-dim)}
+.wb-checkrow:hover{background:var(--wb-card-2);color:var(--wb-text)}
+.wb-checkrow input{margin-top:3px;accent-color:var(--wb-accent);flex:none}
+.wb-char-timeline-row{display:grid;grid-template-columns:150px 140px 1fr 1.1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+.wb-rel-row{display:grid;grid-template-columns:150px 100px 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+.wb-rel-preview{grid-column:1/-1;display:flex;gap:8px;align-items:center;padding:6px 9px;border:.5px solid var(--wb-line);border-radius:10px;background:var(--wb-card)}
+.wb-form-error{color:var(--wb-danger);font-size:12.5px;padding:8px 10px;border:.5px solid color-mix(in srgb,var(--wb-danger) 40%,transparent);border-radius:10px;background:color-mix(in srgb,var(--wb-danger) 8%,transparent)}
+.wb-axis-page{gap:10px}
+.wb-axis-toolbar{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.wb-axis-toolbar-main{min-width:0}
+.wb-axis-toolbar h3{margin:0 0 3px;font-size:16px;font-weight:600}
+.wb-axis-toolbar-main p{margin:0;max-width:720px}
+.wb-axis-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--wb-dim)}
+.wb-axis-legend span{display:inline-flex;align-items:center;gap:5px}
+.wb-axis-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.wb-axis-dot--event{background:var(--wb-accent)}
+.wb-axis-dot--char{background:var(--wb-ok)}
+.wb-axis-dot--inferred{background:var(--wb-warn)}
+.wb-axis-wrap{overflow-x:auto;border:.5px solid var(--wb-line);border-radius:16px;background:var(--wb-card);padding:4px 0 10px;scrollbar-width:thin}
+.wb-axis{min-width:980px;padding:8px 16px 4px}
+.wb-axis-ticks{position:relative;height:26px;margin-left:128px;border-bottom:.5px solid var(--wb-line)}
+.wb-axis-ticks span{position:absolute;bottom:4px;transform:translateX(-50%);font-size:10.5px;color:var(--wb-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wb-axis-lane{display:flex;gap:8px;align-items:stretch;border-bottom:.5px solid var(--wb-line);padding:6px 0;position:relative;border-radius:12px}
+.wb-axis-lane:last-of-type{border-bottom:0}
+.wb-axis-lane[data-selected=true]{background:color-mix(in srgb,var(--wb-accent) 5%,transparent)}
+.wb-axis-label{width:120px;flex:none;position:sticky;left:0;z-index:4;background:var(--wb-card);padding:6px 7px;border-radius:10px;text-align:left;border:0;color:var(--wb-text);font:inherit;display:flex;flex-direction:column;gap:2px;justify-content:center}
+.wb-axis-label b{font-size:12.5px;font-weight:600}
+.wb-axis-label--char{flex-direction:row;align-items:center;gap:8px;cursor:pointer}
+.wb-axis-label--char:hover{background:var(--wb-card-2)}
+.wb-axis-label-text{display:flex;flex-direction:column;min-width:0}
+.wb-axis-label-text b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:78px}
+.wb-axis-label-text span{font-size:10px;color:var(--wb-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:78px}
+.wb-axis-track{position:relative;flex:1;min-width:0}
+.wb-axis-gridline{position:absolute;top:0;bottom:0;border-left:1px dashed var(--wb-line);opacity:.75;pointer-events:none}
+.wb-axis-node{position:absolute;transform:translateX(-50%);border:0;font:inherit;cursor:pointer;text-align:left;z-index:2}
+.wb-axis-node--event{display:flex;flex-direction:column;gap:1px;max-width:150px;padding:5px 7px;border-radius:9px;border:.5px solid var(--wb-line-strong);background:var(--wb-overlay);color:var(--wb-text);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.wb-axis-node--event:hover{border-color:var(--wb-accent)}
+.wb-axis-node--event[data-selected=true]{border-color:var(--wb-accent);box-shadow:0 0 0 1px var(--wb-accent)}
+.wb-axis-node--event span{font-size:9.5px;color:var(--wb-accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:136px}
+.wb-axis-node--event b{font-size:11px;font-weight:600;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+.wb-axis-node--char{display:inline-flex;align-items:center;gap:5px;max-width:150px;padding:3px 6px;border-radius:9px;border:.5px solid transparent;background:color-mix(in srgb,var(--wb-ok) 9%,var(--wb-card));color:var(--wb-text);font-size:10.5px}
+.wb-axis-node--char i{width:7px;height:7px;border-radius:50%;background:var(--wb-ok);flex:none}
+.wb-axis-node--char span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-axis-node--char:hover{border-color:var(--wb-ok)}
+.wb-axis-node--point{background:color-mix(in srgb,var(--wb-accent) 8%,var(--wb-card))}
+.wb-axis-node--point i{background:var(--wb-accent)}
+.wb-axis-node--inferred{border-style:dashed;border-color:var(--wb-warn);background:color-mix(in srgb,var(--wb-warn) 8%,var(--wb-card))}
+.wb-axis-node--inferred i{background:var(--wb-warn)}
+.wb-axis-node--auto{opacity:.92}
+.wb-axis-empty{position:absolute;left:8px;top:12px;font-size:10.5px;color:var(--wb-faint)}
+.wb-axis-unknown{padding:10px 0 4px;border-top:.5px dashed var(--wb-line);margin-top:6px}
+.wb-axis-unknown h4{margin:0 0 6px;font-size:11.5px;color:var(--wb-faint);letter-spacing:.05em}
+.wb-axis-detail{border:.5px solid var(--wb-line);border-radius:16px;background:var(--wb-card);padding:14px;min-height:120px}
+.wb-axis-detail-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.wb-axis-detail-head h3{margin:0;font-size:17px;font-weight:600}
+.wb-axis-detail-main{flex:1;min-width:0}
+.wb-axis-desc{margin:10px 0 0;font-size:13px;line-height:1.8;color:var(--wb-dim);white-space:pre-wrap;overflow-wrap:anywhere}
+.wb-axis-detail-title{margin:14px 0 6px;font-size:11.5px;color:var(--wb-faint);letter-spacing:.06em}
+.wb-relation-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.wb-relation-card{display:flex;gap:8px;align-items:flex-start;text-align:left;border:.5px solid var(--wb-line);border-radius:12px;background:var(--wb-overlay);padding:8px 10px;cursor:pointer;color:inherit;font:inherit}
+.wb-relation-card:hover{border-color:var(--wb-accent)}
+.wb-relation-main{min-width:0}
+.wb-relation-name{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:600;flex-wrap:wrap}
+.wb-axis-points{display:flex;flex-direction:column;gap:3px}
+.wb-axis-point{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;padding:4px 0;border-bottom:.5px dashed var(--wb-line)}
+.wb-axis-point-time{color:var(--wb-accent);font-variant-numeric:tabular-nums;font-size:11px;min-width:82px}
+.wb-axis-detail-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:28px;text-align:center;color:var(--wb-faint)}
+.wb-axis-detail-empty b{color:var(--wb-dim);font-weight:500}
+.wb-axis-detail-empty p{margin:0;font-size:12.5px}
 @media (max-width:820px){
+.wb-char-grid{grid-template-columns:1fr}
+.wb-char-card{min-height:0}
+.wb-char-editor-top{flex-direction:column}
+.wb-char-photo{flex:0 0 auto;width:100%;flex-direction:row;align-items:center;flex-wrap:wrap}
+.wb-char-photo > img,.wb-char-photo > span:first-child{width:96px;height:96px;font-size:28px}
+.wb-char-timeline-row{grid-template-columns:1fr 1fr}
+.wb-char-timeline-row > :nth-child(3),.wb-char-timeline-row > :nth-child(4){grid-column:1/-1}
+.wb-rel-row{grid-template-columns:1fr 1fr}
+.wb-rel-row > :nth-child(3){grid-column:1/-1}
+.wb-axis{min-width:780px;padding:8px 10px}
+.wb-axis-ticks{margin-left:102px}
+.wb-axis-label{width:94px;padding:5px}
+.wb-axis-label-text b,.wb-axis-label-text span{max-width:58px}
+.wb-axis-node--event{max-width:122px}
+.wb-axis-node--char{max-width:122px}
+.wb-axis-toolbar{flex-direction:column}
+.wb-axis-toolbar .wb-inline{width:100%}
 .wb-head{padding-top:12px}
 .wb-headtop{padding-left:40px}
 .wb-title{font-size:17px;line-height:26px}
@@ -285,10 +397,12 @@ window.__ModuleLoader__.load({
         composition: world.composition.length,
         settings: world.settings.length,
         markers: world.map.markers.length,
+        characters: (world.characters || []).length,
       };
     }
 
     function completenessOfClient(world) {
+      const characters = world.characters || [];
       const checks = [
         Boolean(world.name && world.name !== '未命名世界观'),
         Boolean(world.type),
@@ -298,9 +412,101 @@ window.__ModuleLoader__.load({
         world.composition.length > 0,
         world.settings.length > 0,
         Boolean(world.map.notes || world.map.image || world.map.markers.length),
+        characters.length > 0,
+        characters.some((character) => character.relations.length || character.timeline.length || character.eventIds.length),
         Boolean(world.summary),
       ];
       return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+    }
+
+    function mentionedInEvent(event, name) {
+      const target = String(name || '').trim();
+      if (target.length < 2) return false;
+      return `${event.title}\n${event.description}\n${event.impact}`.includes(target);
+    }
+
+    function participatedIdsClient(world, character) {
+      const ids = new Set(character.eventIds || []);
+      for (const event of world.events) {
+        if (mentionedInEvent(event, character.name)) ids.add(event.id);
+      }
+      return [...ids];
+    }
+
+    function buildAxisModel(world) {
+      const characters = world.characters || [];
+      const eventById = new Map(world.events.map((event) => [event.id, event]));
+      const participation = new Map(characters.map((character) => [character.id, new Set(participatedIdsClient(world, character))]));
+      const eventNodes = world.events.map((event) => ({
+        key: `event:${event.id}`,
+        type: 'event',
+        eventId: event.id,
+        title: event.title,
+        time: event.time,
+        description: event.description,
+        impact: event.impact,
+        year: parseYear(event.time),
+      }));
+      const charLanes = characters.map((character) => {
+        const nodes = character.timeline.map((point) => {
+          const event = point.eventId ? eventById.get(point.eventId) : null;
+          return {
+            key: `point:${character.id}:${point.id}`,
+            type: 'point',
+            characterId: character.id,
+            eventId: point.eventId || '',
+            title: point.title,
+            time: point.time || event?.time || '',
+            description: point.description || '',
+            source: point.source,
+            year: parseYear(point.time || event?.time),
+          };
+        });
+        for (const eventId of participation.get(character.id) || []) {
+          const event = eventById.get(eventId);
+          if (!event) continue;
+          if (nodes.some((node) => node.eventId === eventId || (node.time === event.time && node.title === event.title))) continue;
+          nodes.push({
+            key: `participate:${character.id}:${eventId}`,
+            type: 'participate',
+            characterId: character.id,
+            eventId,
+            title: event.title,
+            time: event.time,
+            description: `参与事件：${event.title}`,
+            inferred: !(character.eventIds || []).includes(eventId),
+            year: parseYear(event.time),
+          });
+        }
+        return { character, nodes: nodes.sort((left, right) => (left.year ?? Infinity) - (right.year ?? Infinity) || String(left.time).localeCompare(String(right.time), 'zh')) };
+      });
+      const years = [];
+      for (const node of eventNodes) if (node.year !== null) years.push(node.year);
+      for (const lane of charLanes) for (const node of lane.nodes) if (node.year !== null) years.push(node.year);
+      let min = years.length ? Math.min(...years) : 0;
+      let max = years.length ? Math.max(...years) : 1;
+      if (min === max) { min -= 1; max += 1; }
+      const ticks = Array.from({ length: 5 }, (_, index) => Math.round(min + ((max - min) * index) / 4));
+      const percentOf = (year) => (year === null ? null : Math.max(9, Math.min(91, 9 + ((year - min) / (max - min)) * 82)));
+      const layout = (nodes) => {
+        for (const node of nodes) node.percent = percentOf(node.year);
+        const placed = [];
+        const positioned = nodes
+          .filter((node) => node.percent !== null)
+          .slice()
+          .sort((left, right) => left.percent - right.percent);
+        for (const node of positioned) {
+          let level = 0;
+          while (level < placed.length && Math.abs(placed[level] - node.percent) < 10) level += 1;
+          node.offset = level;
+          placed[level] = node.percent;
+        }
+        for (const node of nodes) if (node.percent === null) node.offset = 0;
+        return nodes;
+      };
+      layout(eventNodes);
+      for (const lane of charLanes) layout(lane.nodes);
+      return { min, max, ticks, eventNodes, charLanes, participation, eventById, percentOf };
     }
 
     function formatTime(value) {
@@ -331,6 +537,38 @@ window.__ModuleLoader__.load({
         reader.onerror = () => reject(reader.error || new Error('图片读取失败'));
         reader.readAsDataURL(file);
       });
+    }
+
+    function loadImageElement(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('图片解析失败'));
+        image.src = src;
+      });
+    }
+
+    async function compressPortrait(file) {
+      if (!file || !String(file.type || '').startsWith('image/')) throw new Error('请选择图片文件');
+      const original = await readDataUrl(file);
+      try {
+        const image = await loadImageElement(original);
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        if (!width || !height) return original;
+        const scale = Math.min(1, 640 / Math.max(width, height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) return original;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        let output = canvas.toDataURL('image/webp', 0.86);
+        if (!output.startsWith('data:image/webp')) output = canvas.toDataURL('image/jpeg', 0.9);
+        return output;
+      } catch {
+        return original;
+      }
     }
 
     async function copyText(text) {
@@ -524,7 +762,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wb-save' },
             h('i', { className: 'wb-savedot', 'data-state': status }),
             saveText),
-          world ? h('span', { className: 'wb-hint' }, `事件 ${counts.events} · 构成 ${counts.composition} · 设定 ${counts.settings}`) : null),
+          world ? h('span', { className: 'wb-hint' }, `事件 ${counts.events} · 角色 ${counts.characters} · 构成 ${counts.composition} · 设定 ${counts.settings}`) : null),
         h('nav', { className: 'wb-tabs', role: 'tablist' },
           TABS.map((item) => h('button', {
             key: item.key,
@@ -538,6 +776,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wb-tab-glyph' }, item.glyph),
           item.label,
           item.key === 'events' && counts ? h('span', { className: 'wb-tag' }, String(counts.events)) : null,
+          item.key === 'characters' && counts ? h('span', { className: 'wb-tag' }, String(counts.characters)) : null,
           item.key === 'composition' && counts ? h('span', { className: 'wb-tag' }, String(counts.composition)) : null,
           item.key === 'settings' && counts ? h('span', { className: 'wb-tag' }, String(counts.settings)) : null))));
     }
@@ -550,6 +789,7 @@ window.__ModuleLoader__.load({
       const [loaded, setLoaded] = useState(false);
       const [tab, setTab] = useState('overview');
       const [mapUrl, setMapUrl] = useState('');
+      const [charImages, setCharImages] = useState({});
       const [modal, setModal] = useState(null);
       const [menu, setMenu] = useState(false);
       const [busy, setBusy] = useState(null);
@@ -633,6 +873,30 @@ window.__ModuleLoader__.load({
           setMapUrl('');
         }
       }, [request]);
+
+      const charImageKey = world ? (world.characters || []).map((character) => `${character.id}:${character.image || ''}`).join('|') : '';
+
+      useEffect(() => {
+        let alive = true;
+        if (!world?.id) {
+          setCharImages({});
+          return () => { alive = false; };
+        }
+        const ids = (world.characters || []).filter((character) => character.image).map((character) => character.id);
+        if (ids.length === 0) {
+          setCharImages({});
+          return () => { alive = false; };
+        }
+        (async () => {
+          try {
+            const data = await request('character/images', { id: world.id, ids });
+            if (alive) setCharImages(data.images || {});
+          } catch {
+            if (alive) setCharImages({});
+          }
+        })();
+        return () => { alive = false; };
+      }, [world?.id, charImageKey, request]);
 
       const reloadWorld = useCallback(async (id) => {
         const data = await request('world/get', { id });
@@ -1024,6 +1288,93 @@ window.__ModuleLoader__.load({
         });
       }, [mutate]);
 
+      const openCharacter = useCallback((character = null) => {
+        openModal({ kind: 'character', character });
+      }, [openModal]);
+
+      const saveCharacter = useCallback((values, existing, characterId) => {
+        mutate((draft) => {
+          draft.characters = draft.characters || [];
+          if (existing?.id) {
+            const index = draft.characters.findIndex((character) => character.id === existing.id);
+            if (index >= 0) {
+              draft.characters[index] = {
+                ...draft.characters[index],
+                ...values,
+                id: existing.id,
+                updatedAt: Date.now(),
+              };
+            }
+          } else {
+            draft.characters.push({
+              id: characterId || localId('ch'),
+              ...values,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+        });
+        setModal(null);
+      }, [mutate]);
+
+      const removeCharacter = useCallback((character) => {
+        openModal({
+          kind: 'confirm',
+          title: '删除这个角色？',
+          description: `「${character.name}」的角色图、关系与时间点会一并移除；其他角色的关系引用会在保存时自动清理。`,
+          confirmText: '删除',
+          danger: true,
+          onConfirm: () => {
+            mutate((draft) => {
+              draft.characters = (draft.characters || []).filter((item) => item.id !== character.id);
+            });
+            setModal(null);
+          },
+        });
+      }, [mutate, openModal]);
+
+      const uploadCharacterImage = useCallback(async (characterId, dataUrl) => (
+        request('character/image/upload', { id: worldRef.current.id, characterId, dataUrl })
+      ), [request]);
+
+      const integrateTimeline = useCallback(async (mode) => {
+        if (!worldRef.current) return;
+        setModal(null);
+        const controller = mode === 'ai' ? new AbortController() : undefined;
+        setBusy({
+          label: mode === 'ai' ? '正在让 AI 整合时间轴…' : '正在从世界观信息整合时间轴…',
+          controller,
+          start: Date.now(),
+        });
+        try {
+          await flushSave();
+          const data = await request(mode === 'ai' ? 'ai/timeline' : 'timeline/integrate', { id: worldRef.current.id }, controller?.signal);
+          applyWorld(data);
+          if (data.applied?.length) {
+            toast(`已整合 ${data.applied.length} 项事实：${data.applied.slice(0, 2).join('；')}${data.applied.length > 2 ? '…' : ''}`);
+          } else {
+            toast(data.reply ? String(data.reply).slice(0, 160) : '没有发现需要补充的新事实');
+          }
+        } catch (error) {
+          if (error.code === 'worldbuilding/aborted') toast('已取消');
+          else toast(error.message || '时间轴整合失败', 'error');
+        } finally {
+          setBusy(null);
+        }
+      }, [flushSave, request, applyWorld, toast]);
+
+      const openTimelineIntegrate = useCallback((mode) => {
+        openModal({
+          kind: 'confirm',
+          title: mode === 'ai' ? 'AI 整合时间轴？' : '从世界观信息整合时间轴？',
+          description: mode === 'ai'
+            ? 'AI 会读取当前事件、角色、已有时间线与关系，只补齐缺失的参与事件、角色时间点和明显关系；不会改写已有内容，也不改事件本身。'
+            : '会扫描事件文本里提到的角色名，补齐角色的参与事件与缺失的角色时间点；不会改写已有内容，也不改事件本身。',
+          confirmText: '开始整合',
+          onConfirm: () => integrateTimeline(mode),
+        });
+      }, [openModal, integrateTimeline]);
+
       const clearChat = useCallback(() => {
         openModal({
           kind: 'confirm',
@@ -1076,11 +1427,11 @@ window.__ModuleLoader__.load({
         }
       }, [flushSave, request, loadMapFor, toast]);
 
-      const openGenerate = useCallback((mode = 'new') => {
+      const openGenerate = useCallback((mode = 'new', presetPrompt = '') => {
         openModal({
           kind: 'generate',
           initialMode: mode,
-          initialPrompt: mode === 'fill' ? '补全缺失或过薄的部分，保持已有设定与专有名词不变。' : '',
+          initialPrompt: presetPrompt || (mode === 'fill' ? '补全缺失或过薄的部分，保持已有设定与专有名词不变。' : ''),
         });
       }, [openModal]);
 
@@ -1100,7 +1451,9 @@ window.__ModuleLoader__.load({
         if (tab === 'overview') return h(OverviewPanel, { ...panelProps, savedAt });
         if (tab === 'type') return h(TypePanel, panelProps);
         if (tab === 'timeline') return h(TimelinePanel, panelProps);
+        if (tab === 'axis') return h(TimelineAxisPanel, { world, charImages, openCharacter, onGo: setTab, onIntegrateLocal: () => openTimelineIntegrate('local'), onIntegrateAi: () => openTimelineIntegrate('ai') });
         if (tab === 'events') return h(EventsPanel, panelProps);
+        if (tab === 'characters') return h(CharactersPanel, { world, charImages, openCharacter, removeCharacter, openGenerate, onGo: setTab });
         if (tab === 'composition') return h(CompositionPanel, panelProps);
         if (tab === 'map') return h(MapPanel, { ...panelProps, mapUrl, uploadMap, removeMap });
         if (tab === 'settings') return h(SettingsPanel, panelProps);
@@ -1124,6 +1477,17 @@ window.__ModuleLoader__.load({
         }
         if (modal.kind === 'entry') {
           return h(EntryDialog, { key: modal.token, target: modal.target, entry: modal.entry, coords: modal.coords, onClose: () => setModal(null), onSave: saveEntry });
+        }
+        if (modal.kind === 'character') {
+          return h(CharacterDialog, {
+            key: modal.token,
+            world,
+            character: modal.character,
+            charImages,
+            onClose: () => setModal(null),
+            onSave: saveCharacter,
+            onUploadImage: uploadCharacterImage,
+          });
         }
         if (modal.kind === 'confirm') {
           return h(ConfirmDialog, { key: modal.token, modal, onClose: () => setModal(null) });
@@ -1232,6 +1596,8 @@ window.__ModuleLoader__.load({
         { label: '主要构成', done: world.composition.length > 0, tab: 'composition' },
         { label: '世界地图', done: Boolean(world.map.notes || world.map.image || world.map.markers.length), tab: 'map' },
         { label: '基本设定与规则', done: world.settings.length > 0, tab: 'settings' },
+        { label: '重要角色', done: (world.characters || []).length > 0, tab: 'characters' },
+        { label: '角色关系与时间轴', done: (world.characters || []).some((character) => character.relations.length || character.timeline.length || character.eventIds.length), tab: 'axis' },
       ];
       return h('div', { className: 'wb-scroll' },
         h('div', { className: 'wb-narrow' },
@@ -1258,6 +1624,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wb-stat', onClick: () => onGo('timeline') }, h('b', null, String(counts.timeline)), h('span', null, '时代划分')),
             h('button', { type: 'button', className: 'wb-stat', onClick: () => onGo('composition') }, h('b', null, String(counts.composition)), h('span', null, '主要构成')),
             h('button', { type: 'button', className: 'wb-stat', onClick: () => onGo('settings') }, h('b', null, String(counts.settings)), h('span', null, '基本设定')),
+            h('button', { type: 'button', className: 'wb-stat', onClick: () => onGo('characters') }, h('b', null, String(counts.characters)), h('span', null, '重要角色')),
             h('button', { type: 'button', className: 'wb-stat', onClick: () => onGo('map') }, h('b', null, String(counts.markers)), h('span', null, '地图标注'))),
           h(SectionCard, {
             title: '总览',
@@ -1288,7 +1655,8 @@ window.__ModuleLoader__.load({
               h('div', { className: 'wb-quick' },
                 h(Btn, { size: 'sm', onClick: () => openGenerate('fill') }, '✦ 一键补全缺失内容'),
                 h(Btn, { size: 'sm', onClick: () => onGo('events') }, '⚑ 添加第一条重大事件'),
-                h(Btn, { size: 'sm', onClick: () => onGo('composition') }, '❖ 补充势力与地理'),
+                h(Btn, { size: 'sm', onClick: () => onGo('characters') }, '☾ 添加重要角色'),
+                h(Btn, { size: 'sm', onClick: () => onGo('axis') }, '⌁ 查看时间轴'),
                 h(Btn, { size: 'sm', onClick: () => onGo('settings') }, '⚖ 写一条世界规则'),
                 h(Btn, { size: 'sm', onClick: () => onGo('ai') }, '✧ 用对话继续补充'))))));
     }
@@ -1549,6 +1917,510 @@ window.__ModuleLoader__.load({
                 h(IconBtn, { label: '删除标注', onClick: () => removeEntry('marker', marker) }, '×')))))));
     }
 
+    /* ------------------------------------------------------------ 重要角色 */
+
+    function characterInitial(name) {
+      return String(name || '?').trim().slice(0, 1) || '?';
+    }
+
+    function characterIsNpc(character) {
+      return Boolean(character.npc) || /NPC|剧情/i.test(character.role || '');
+    }
+
+    function CharacterCard({ character, image, onOpen, onEdit, onRemove }) {
+      const relationCount = (character.relations || []).length;
+      return h('div', {
+        className: 'wb-char-card',
+        role: 'button',
+        tabIndex: 0,
+        onClick: onOpen,
+        onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } },
+      },
+      h('div', { className: 'wb-char-avatar' },
+        image ? h('img', { src: image, alt: character.name, draggable: false }) : h('span', null, characterInitial(character.name))),
+      h('div', { className: 'wb-char-main' },
+        h('div', { className: 'wb-char-name' },
+          character.name,
+          characterIsNpc(character) ? h('span', { className: 'wb-tag wb-tag--npc' }, 'NPC') : null,
+          character.nonHuman ? h('span', { className: 'wb-tag wb-tag--species' }, character.species || '非人类') : null),
+        h('div', { className: 'wb-char-sub' }, `${character.role || '重要角色'} · ${character.identity || '身份未填写'}`),
+        h('div', { className: 'wb-char-meta' },
+          `${character.nonHuman || character.species ? `物种 ${character.species || '未填写'}` : '人类/未标物种'} · 关系 ${relationCount} · 时间点 ${(character.timeline || []).length + (character.eventIds || []).length}`),
+        character.description ? h('div', { className: 'wb-char-desc' }, character.description) : null),
+      h('div', { className: 'wb-char-actions' },
+        h(IconBtn, { label: '编辑角色', onClick: (event) => { event.stopPropagation(); onEdit(); } }, '✎'),
+        h(IconBtn, { label: '删除角色', onClick: (event) => { event.stopPropagation(); onRemove(); } }, '×')));
+    }
+
+    function CharactersPanel({ world, charImages, openCharacter, removeCharacter, openGenerate, onGo }) {
+      const [filter, setFilter] = useState('all');
+      const characters = world.characters || [];
+      const isProtagonist = (character) => /主角/i.test(character.role || '') && !/配角/i.test(character.role || '');
+      const isVillain = (character) => /反派|敌人|敌/i.test(character.role || '');
+      const isSupport = (character) => /配角|导师|路人|其他/i.test(character.role || '');
+      const isNonHuman = (character) => Boolean(character.nonHuman) || Boolean(character.species && !/^(人类|人族|human|humanoid)$/i.test(character.species));
+      const filters = [
+        { key: 'all', label: '全部', match: () => true },
+        { key: 'protagonist', label: '主角', match: isProtagonist },
+        { key: 'villain', label: '反派', match: isVillain },
+        { key: 'support', label: '配角', match: isSupport },
+        { key: 'npc', label: '剧情 NPC', match: characterIsNpc },
+        { key: 'nonhuman', label: '非人类', match: isNonHuman },
+      ];
+      const current = filters.find((item) => item.key === filter) || filters[0];
+      const visible = characters.filter(current.match);
+      const aiPrompt = '补充 3-5 个重要角色或剧情 NPC；写清姓名、角色、身份、物种（非人类）、外貌与动机、彼此关系，以及和已有事件/势力的关联；不要改写已有角色。';
+      return h('div', { className: 'wb-scroll' },
+        h('div', { className: 'wb-wide' },
+          h('div', { className: 'wb-sectionhead' },
+            h('h3', null, '重要角色'),
+            h('span', { className: 'wb-hint' }, `${characters.length} 个角色 · ${characters.filter((character) => character.relations.length > 0).length} 个有关系 · ${characters.filter(characterIsNpc).length} 个 NPC`),
+            h('span', { className: 'wb-spacer' }),
+            h(Btn, { size: 'sm', variant: 'ghost', onClick: () => openGenerate('fill', aiPrompt) }, '✦ AI 补全角色'),
+            h(Btn, { size: 'sm', variant: 'primary', onClick: () => openCharacter(null) }, '＋ 添加角色')),
+          h('div', { className: 'wb-chips' },
+            filters.map((item) => h(Chip, {
+              key: item.key,
+              active: filter === item.key,
+              onClick: () => setFilter(item.key),
+            }, `${item.label}${item.key === 'all' ? ` ${characters.length}` : ` ${characters.filter(item.match).length}`}`))),
+          characters.length === 0
+            ? h(EmptyBlock, {
+              glyph: '☾',
+              title: '还没有重要角色',
+              text: '重要角色和剧情 NPC 会出现在角色卡与时间轴上。可以手填，也可以让 AI 从现有事件、势力与时代里补出一组互相有关系的人。',
+              action: h('div', { className: 'wb-inline' },
+                h(Btn, { size: 'sm', variant: 'primary', onClick: () => openCharacter(null) }, '添加第一个角色'),
+                h(Btn, { size: 'sm', onClick: () => openGenerate('fill', aiPrompt) }, '✦ 让 AI 补全')),
+            })
+            : visible.length === 0
+              ? h('div', { className: 'wb-hint' }, '这个筛选下没有角色。可以切换「全部」，或添加一个新角色。')
+              : h('div', { className: 'wb-char-grid' },
+                visible.map((character) => h(CharacterCard, {
+                  key: character.id,
+                  character,
+                  image: charImages?.[character.id] || '',
+                  onOpen: () => openCharacter(character),
+                  onEdit: () => openCharacter(character),
+                  onRemove: () => removeCharacter(character),
+                }))),
+          characters.length > 0
+            ? h('div', { className: 'wb-inline', style: { marginTop: 4 } },
+              h(Btn, { size: 'sm', variant: 'ghost', onClick: () => onGo('axis') }, '⌁ 在时间轴上查看'),
+              h(Btn, { size: 'sm', variant: 'ghost', onClick: () => setFilter('all') }, '显示全部角色'))
+            : null));
+    }
+
+    function CharacterDialog({ world, character, charImages, onClose, onSave, onUploadImage }) {
+      const [characterId] = useState(character?.id || localId('ch'));
+      const [name, setName] = useState(character?.name || '');
+      const [role, setRole] = useState(character?.role || '重要角色');
+      const [identity, setIdentity] = useState(character?.identity || '');
+      const [species, setSpecies] = useState(character?.species || '');
+      const [nonHuman, setNonHuman] = useState(Boolean(character?.nonHuman) || Boolean(character?.species && !/^(人类|人族|human|humanoid)$/i.test(character.species)));
+      const [npc, setNpc] = useState(Boolean(character?.npc) || /NPC|剧情/i.test(character?.role || ''));
+      const [description, setDescription] = useState(character?.description || '');
+      const [image, setImage] = useState(character?.image || '');
+      const [imagePreview, setImagePreview] = useState((character && charImages?.[character.id]) || '');
+      const [imageBusy, setImageBusy] = useState(false);
+      const [error, setError] = useState('');
+      const [relatedEntries, setRelatedEntries] = useState(() => clone(character?.relatedEntries || []));
+      const [timeline, setTimeline] = useState(() => clone(character?.timeline || []));
+      const [eventIds, setEventIds] = useState(() => clone(character?.eventIds || []));
+      const [relations, setRelations] = useState(() => clone(character?.relations || []));
+      const portraitRef = useRef(null);
+
+      useEffect(() => {
+        if (!imagePreview && image && charImages?.[characterId]) setImagePreview(charImages[characterId]);
+      }, [charImages?.[characterId]]);
+
+      const relatedOptions = [
+        ...world.events.map((event) => ({ kind: 'event', id: event.id, label: `事件 · ${event.title}` })),
+        ...world.timeline.map((era) => ({ kind: 'timeline', id: era.id, label: `时代 · ${era.name}` })),
+        ...world.composition.map((item) => ({ kind: 'composition', id: item.id, label: `构成 · ${item.title}` })),
+        ...world.settings.map((item) => ({ kind: 'setting', id: item.id, label: `设定 · ${item.title}` })),
+        ...world.map.markers.map((marker) => ({ kind: 'marker', id: marker.id, label: `地点 · ${marker.name}` })),
+      ];
+      const relatedKeys = new Set(relatedEntries.map((item) => `${item.kind}:${item.id}`));
+      const toggleRelated = (option) => {
+        setRelatedEntries((previous) => {
+          const key = `${option.kind}:${option.id}`;
+          if (previous.some((item) => `${item.kind}:${item.id}` === key)) {
+            return previous.filter((item) => `${item.kind}:${item.id}` !== key);
+          }
+          return [...previous, { kind: option.kind, id: option.id, label: option.label }].slice(0, 40);
+        });
+      };
+      const toggleEvent = (eventId) => {
+        setEventIds((previous) => (previous.includes(eventId) ? previous.filter((id) => id !== eventId) : [...previous, eventId]));
+      };
+      const updatePoint = (index, patch) => {
+        setTimeline((previous) => previous.map((point, current) => (current === index ? { ...point, ...patch } : point)));
+      };
+      const addPoint = () => {
+        setTimeline((previous) => [...previous, { id: localId('tp'), time: '', title: '', description: '', eventId: '' }]);
+      };
+      const removePoint = (index) => setTimeline((previous) => previous.filter((_, current) => current !== index));
+      const choosePointEvent = (index, eventId) => {
+        const event = world.events.find((item) => item.id === eventId);
+        updatePoint(index, {
+          eventId,
+          time: event?.time || '',
+          title: event?.title || '',
+          description: event ? `参与事件：${event.title}` : '',
+        });
+      };
+      const addRelation = () => setRelations((previous) => [...previous, { id: localId('rel'), targetId: '', type: '盟友', note: '' }]);
+      const updateRelation = (index, patch) => {
+        setRelations((previous) => previous.map((relation, current) => (current === index ? { ...relation, ...patch } : relation)));
+      };
+      const removeRelation = (index) => setRelations((previous) => previous.filter((_, current) => current !== index));
+      const relationTargets = (world.characters || []).filter((item) => item.id !== characterId);
+
+      const uploadPortrait = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setError('');
+        setImageBusy(true);
+        try {
+          const dataUrl = await compressPortrait(file);
+          const result = await onUploadImage(characterId, dataUrl);
+          setImage(result.image);
+          setImagePreview(result.dataUrl || dataUrl);
+        } catch (failure) {
+          setError(failure?.message || '角色图上传失败');
+        } finally {
+          setImageBusy(false);
+        }
+      };
+
+      const submit = () => {
+        if (!name.trim()) {
+          setError('请先填写角色姓名');
+          return;
+        }
+        const values = {
+          name: name.trim(),
+          role: role.trim() || '重要角色',
+          identity: identity.trim(),
+          species: species.trim(),
+          nonHuman: Boolean(nonHuman),
+          npc: Boolean(npc),
+          description: description.trim(),
+          image,
+          relatedEntries: relatedEntries.slice(0, 40),
+          timeline: timeline
+            .map((point) => ({
+              id: point.id || localId('tp'),
+              time: String(point.time || '').trim(),
+              title: String(point.title || '').trim(),
+              description: String(point.description || '').trim(),
+              eventId: point.eventId || '',
+              source: point.source || 'manual',
+            }))
+            .filter((point) => point.title || point.time),
+          eventIds: eventIds.filter(Boolean),
+          relations: relations
+            .filter((relation) => relation.targetId)
+            .map((relation) => ({
+              id: relation.id || localId('rel'),
+              targetId: relation.targetId,
+              type: relation.type || '其他',
+              note: String(relation.note || '').trim(),
+            })),
+        };
+        onSave(values, character, characterId);
+      };
+
+      return h(Modal, {
+        title: `${character ? '编辑' : '添加'}重要角色`,
+        description: '角色图会自动压缩到 640px 以内；非人类角色请勾选并填写物种。关系选择已有角色后，会自动显示对方信息。',
+        onClose,
+        wide: true,
+        footer: h(React.Fragment, null,
+          error ? h('span', { className: 'wb-form-error', style: { marginRight: 'auto' } }, error) : h('span', { className: 'wb-spacer' }),
+          h(Btn, { onClick: onClose }, '取消'),
+          h(Btn, { variant: 'primary', onClick: submit, disabled: imageBusy }, character ? '保存角色' : '添加角色')),
+      },
+      h('div', { className: 'wb-form' },
+        h('div', { className: 'wb-char-editor-top' },
+          h('div', { className: 'wb-char-photo' },
+            imagePreview ? h('img', { src: imagePreview, alt: name || '角色图' }) : h('span', null, characterInitial(name)),
+            h('div', { className: 'wb-inline' },
+              h(Btn, { size: 'sm', onClick: () => portraitRef.current?.click(), disabled: imageBusy }, imageBusy ? '上传中…' : image ? '更换角色图' : '上传角色图'),
+              image ? h(Btn, { size: 'sm', variant: 'danger', onClick: () => { setImage(''); setImagePreview(''); } }, '移除') : null),
+            h('input', { ref: portraitRef, type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', style: { display: 'none' }, onChange: uploadPortrait }),
+            h('span', { className: 'wb-hint' }, 'PNG / JPEG / WebP / GIF，自动压缩')),
+          h('div', { className: 'wb-char-fields' },
+            h('div', { className: 'wb-formrow' },
+              h(Field, { label: '姓名' }, h('input', { className: 'wb-input', autoFocus: true, value: name, placeholder: '例如：顾青梧', onChange: (event) => setName(event.target.value) })),
+              h(Field, { label: '角色' },
+                h('input', { className: 'wb-input', value: role, list: 'wb-character-roles', placeholder: '主角 / 反派 / 剧情 NPC', onChange: (event) => setRole(event.target.value) }),
+                h('datalist', { id: 'wb-character-roles' }, CHARACTER_ROLES.map((item) => h('option', { key: item, value: item }))))),
+            h('div', { className: 'wb-formrow' },
+              h(Field, { label: '身份', hint: '在世界中的职位、称号或处境' }, h('input', { className: 'wb-input', value: identity, placeholder: '例如：白塔最后的守夜人', onChange: (event) => setIdentity(event.target.value) })),
+              h(Field, { label: '物种', hint: '非人类角色填写；人类可留空' },
+                h('div', { className: 'wb-inline' },
+                  h('label', { className: 'wb-inline', style: { cursor: 'pointer', fontSize: 12.5 } },
+                    h('input', { type: 'checkbox', checked: nonHuman, onChange: (event) => { setNonHuman(event.target.checked); if (!event.target.checked) setSpecies(''); } }),
+                    h('span', null, '非人类')),
+                  nonHuman
+                    ? h('input', { className: 'wb-input', value: species, placeholder: '潮灵 / 精灵 / 龙族', onChange: (event) => setSpecies(event.target.value) })
+                    : h('span', { className: 'wb-hint' }, '勾选后填写物种')))))),
+        h('div', { className: 'wb-inline' },
+          h('label', { className: 'wb-inline', style: { cursor: 'pointer', fontSize: 12.5 } },
+            h('input', { type: 'checkbox', checked: npc, onChange: (event) => setNpc(event.target.checked) }),
+            h('span', null, '剧情 NPC（会出现在 NPC 筛选与时间轴中）')),
+          h('span', { className: 'wb-hint' }, '角色图、身份、物种都会进入导出与 AI 上下文。')),
+        h(Field, { label: '简介与动机', hint: '外貌、性格、动机、能力、秘密、说话方式；与哪些事件/势力有关。' },
+          h('textarea', { className: 'wb-area', style: { minHeight: 100 }, value: description, placeholder: '例如：失忆的年轻守夜人，能听懂灯语；她记得焚塔夜的一角，但不敢说出自己看见了谁。', onChange: (event) => setDescription(event.target.value) })),
+        h('div', { className: 'wb-sectionhead' }, h('h3', null, '关联条目'), h('span', { className: 'wb-hint' }, '可以关联事件、时代、构成、设定与地图标注；时间轴会优先展示这些关系。')),
+        h('div', { className: 'wb-check-list' },
+          relatedOptions.length === 0
+            ? h('div', { className: 'wb-hint' }, '世界观里还没有可关联的条目。')
+            : relatedOptions.map((option) => h('label', { key: `${option.kind}:${option.id}`, className: 'wb-checkrow' },
+              h('input', { type: 'checkbox', checked: relatedKeys.has(`${option.kind}:${option.id}`), onChange: () => toggleRelated(option) }),
+              h('span', null, option.label)))),
+        h('div', { className: 'wb-sectionhead' }, h('h3', null, '参与的重大事件'), h('span', { className: 'wb-hint' }, '勾选后角色会出现在事件节点与时间轴泳道上。')),
+        h('div', { className: 'wb-check-list' },
+          world.events.length === 0
+            ? h('div', { className: 'wb-hint' }, '还没有重大事件。')
+            : world.events.map((event) => h('label', { key: event.id, className: 'wb-checkrow' },
+              h('input', { type: 'checkbox', checked: eventIds.includes(event.id), onChange: () => toggleEvent(event.id) }),
+              h('span', null, `${event.time ? `[${event.time}] ` : ''}${event.title}`)))),
+        h('div', { className: 'wb-sectionhead' },
+          h('h3', null, '角色时间线'),
+          h('span', { className: 'wb-hint' }, '可以选一条重大事件自动带入时间与标题，也可以写角色自己的经历。'),
+          h('span', { className: 'wb-spacer' }),
+          h(Btn, { size: 'sm', onClick: addPoint }, '＋ 添加时间点')),
+        timeline.length === 0
+          ? h('div', { className: 'wb-hint' }, '还没有角色时间点。可以点「添加时间点」，或先勾选参与事件让时间轴自动整合。')
+          : timeline.map((point, index) => h('div', { key: point.id || index, className: 'wb-char-timeline-row' },
+            h('select', { className: 'wb-input', value: point.eventId || '', onChange: (event) => choosePointEvent(index, event.target.value) },
+              h('option', { value: '' }, '不关联事件'),
+              world.events.map((event) => h('option', { key: event.id, value: event.id }, `${event.time || '时间未定'} · ${event.title}`))),
+            h('input', { className: 'wb-input', value: point.time || '', placeholder: '时间', onChange: (event) => updatePoint(index, { time: event.target.value }) }),
+            h('input', { className: 'wb-input', value: point.title || '', placeholder: '发生了什么', onChange: (event) => updatePoint(index, { title: event.target.value }) }),
+            h('input', { className: 'wb-input', value: point.description || '', placeholder: '细节（可选）', onChange: (event) => updatePoint(index, { description: event.target.value }) }),
+            h(IconBtn, { label: '删除时间点', onClick: () => removePoint(index) }, '×'))),
+        h('div', { className: 'wb-sectionhead' },
+          h('h3', null, '角色关系'),
+          h('span', { className: 'wb-hint' }, '选择已有角色后会自动显示对方信息；关系会进入时间轴侧栏与导出。'),
+          h('span', { className: 'wb-spacer' }),
+          h(Btn, { size: 'sm', onClick: addRelation }, '＋ 添加关系')),
+        relations.length === 0
+          ? h('div', { className: 'wb-hint' }, '还没有角色关系。可以添加盟友、敌对、亲属、师徒等关系。')
+          : relations.map((relation, index) => {
+            const target = (world.characters || []).find((item) => item.id === relation.targetId);
+            return h('div', { key: relation.id || index, className: 'wb-rel-row' },
+              h('select', { className: 'wb-input', value: relation.targetId || '', onChange: (event) => updateRelation(index, { targetId: event.target.value }) },
+                h('option', { value: '' }, '选择另一个角色'),
+                relationTargets.map((item) => h('option', { key: item.id, value: item.id }, item.name))),
+              h('select', { className: 'wb-input', value: relation.type || '盟友', onChange: (event) => updateRelation(index, { type: event.target.value }) },
+                RELATION_TYPES.map((type) => h('option', { key: type, value: type }, type))),
+              h('input', { className: 'wb-input', value: relation.note || '', placeholder: '关系的具体内容与张力', onChange: (event) => updateRelation(index, { note: event.target.value }) }),
+              h(IconBtn, { label: '删除关系', onClick: () => removeRelation(index) }, '×'),
+              target
+                ? h('div', { className: 'wb-rel-preview' },
+                  h('div', { className: 'wb-char-avatar wb-char-avatar--sm' }, charImages?.[target.id] ? h('img', { src: charImages[target.id], alt: target.name }) : h('span', null, characterInitial(target.name))),
+                  h('div', null,
+                    h('b', null, target.name),
+                    h('span', { className: 'wb-hint' }, ` · ${target.role || '重要角色'}${target.identity ? ` · ${target.identity}` : ''}`),
+                    target.nonHuman || target.species ? h('div', { className: 'wb-hint' }, `物种：${target.species || '未填写'}`) : null))
+                : h('div', { className: 'wb-hint' }, '选择角色后自动显示对方身份、物种与角色图。'));
+          })));
+    }
+
+    /* ------------------------------------------------------------- 时间轴 */
+
+    function axisTickLabel(year) {
+      return year < 0 ? `前 ${Math.abs(year)} 年` : `${year} 年`;
+    }
+
+    function TimelineAxisPanel({ world, charImages, openCharacter, onIntegrateLocal, onIntegrateAi, onGo }) {
+      const [selectedCharacterId, setSelectedCharacterId] = useState('');
+      const [selectedEventId, setSelectedEventId] = useState('');
+      const detailRef = useRef(null);
+      const model = buildAxisModel(world);
+      const characters = world.characters || [];
+      const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) || null;
+      const selectedEvent = world.events.find((event) => event.id === selectedEventId) || null;
+      const selectCharacter = (id) => { setSelectedCharacterId(id); setSelectedEventId(''); };
+      const selectEvent = (id) => { setSelectedEventId(id); setSelectedCharacterId(''); };
+      useEffect(() => {
+        if (!selectedCharacterId && !selectedEventId) return;
+        const node = detailRef.current;
+        if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, [selectedCharacterId, selectedEventId]);
+      const laneHeight = (nodes) => 64 + Math.max(0, ...nodes.map((node) => node.offset || 0)) * 44;
+      const eventNodes = model.eventNodes.filter((node) => node.percent !== null);
+      const unknownEvents = model.eventNodes.filter((node) => node.percent === null);
+      const unknownCharacters = model.charLanes.filter((lane) => lane.nodes.some((node) => node.percent === null));
+      const participantsOf = (eventId) => characters.filter((character) => model.participation.get(character.id)?.has(eventId));
+      const eventsOf = (characterId) => {
+        const ids = model.participation.get(characterId) || new Set();
+        return world.events.filter((event) => ids.has(event.id));
+      };
+      const relationsOf = (character) => character.relations.map((relation) => ({
+        ...relation,
+        target: characters.find((item) => item.id === relation.targetId),
+      })).filter((relation) => relation.target);
+
+      return h('div', { className: 'wb-scroll' },
+        h('div', { className: 'wb-wide wb-axis-page' },
+          h('div', { className: 'wb-axis-toolbar' },
+            h('div', { className: 'wb-axis-toolbar-main' },
+              h('h3', null, '时间轴'),
+              h('p', { className: 'wb-hint' }, `${world.events.length} 个重大事件 · ${characters.length} 个角色。点击事件节点或角色泳道查看详情与关系；虚线节点表示从事件文本中推断出的参与关系。时间轴可左右滑动。`)),
+            h('div', { className: 'wb-inline' },
+              h(Btn, { size: 'sm', onClick: onIntegrateLocal }, '⌁ 从现有信息整合'),
+              h(Btn, { size: 'sm', variant: 'primary', onClick: onIntegrateAi }, '✦ 让 AI 整合时间轴'))),
+          h('div', { className: 'wb-axis-legend' },
+            h('span', null, h('i', { className: 'wb-axis-dot wb-axis-dot--event' }), '重大事件'),
+            h('span', null, h('i', { className: 'wb-axis-dot wb-axis-dot--char' }), '角色时间点'),
+            h('span', null, h('i', { className: 'wb-axis-dot wb-axis-dot--inferred' }), '从事件文本推断'),
+            h('span', { className: 'wb-hint' }, '选择角色后，关系与共同事件会自动显示在下方。')),
+          world.events.length === 0 && characters.length === 0
+            ? h(EmptyBlock, {
+              glyph: '⌁',
+              title: '时间轴还没有素材',
+              text: '先添加几条重大事件，再添加重要角色与参与事件；时间轴会把它们排到同一条时间线上，并显示角色关系。',
+              action: h('div', { className: 'wb-inline' },
+                h(Btn, { size: 'sm', onClick: () => onGo('events') }, '添加重大事件'),
+                h(Btn, { size: 'sm', onClick: () => onGo('characters') }, '添加重要角色')),
+            })
+            : h('div', { className: 'wb-axis-wrap' },
+              h('div', { className: 'wb-axis' },
+                h('div', { className: 'wb-axis-ticks' },
+                  model.ticks.map((tick) => h('span', { key: tick, style: { left: `${model.percentOf(tick)}%` } }, axisTickLabel(tick)))),
+                h('div', { className: 'wb-axis-lane' },
+                  h('div', { className: 'wb-axis-label' },
+                    h('b', null, '重大事件'),
+                    h('span', { className: 'wb-hint' }, `${eventNodes.length} 个节点`)),
+                  h('div', { className: 'wb-axis-track', style: { height: laneHeight(eventNodes) } },
+                    model.ticks.map((tick) => h('i', { key: `event-grid-${tick}`, className: 'wb-axis-gridline', style: { left: `${model.percentOf(tick)}%` } })),
+                    eventNodes.map((node) => h('button', {
+                      key: node.key,
+                      type: 'button',
+                      className: 'wb-axis-node wb-axis-node--event',
+                      'data-selected': selectedEventId === node.eventId ? 'true' : 'false',
+                      style: { left: `${node.percent}%`, top: `${10 + node.offset * 46}px` },
+                      title: `${node.time || '时间未定'} · ${node.title}`,
+                      onClick: () => selectEvent(node.eventId),
+                    },
+                    h('span', null, node.time || '时间未定'),
+                    h('b', null, node.title))))),
+                model.charLanes.map((lane) => {
+                  const character = lane.character;
+                  const axisNodes = lane.nodes.filter((node) => node.percent !== null);
+                  const selected = selectedCharacterId === character.id;
+                  return h('div', { key: character.id, className: 'wb-axis-lane', 'data-selected': selected ? 'true' : 'false' },
+                    h('button', {
+                      type: 'button',
+                      className: 'wb-axis-label wb-axis-label--char',
+                      onClick: () => selectCharacter(character.id),
+                      title: `查看 ${character.name} 的关系与时间线`,
+                    },
+                    h('span', { className: 'wb-char-avatar wb-char-avatar--sm' },
+                      charImages?.[character.id] ? h('img', { src: charImages[character.id], alt: character.name }) : h('span', null, characterInitial(character.name))),
+                    h('span', { className: 'wb-axis-label-text' },
+                      h('b', null, character.name),
+                      h('span', null, `${character.role || '角色'}${character.npc ? ' · NPC' : ''}`))),
+                    h('div', { className: 'wb-axis-track', style: { height: laneHeight(axisNodes) } },
+                      model.ticks.map((tick) => h('i', { key: `${character.id}-grid-${tick}`, className: 'wb-axis-gridline', style: { left: `${model.percentOf(tick)}%` } })),
+                      axisNodes.length === 0 ? h('span', { className: 'wb-axis-empty' }, '没有可定位的时间点') : null,
+                      axisNodes.map((node) => h('button', {
+                        key: node.key,
+                        type: 'button',
+                        className: `wb-axis-node wb-axis-node--char${node.type === 'point' ? ' wb-axis-node--point' : ''}${node.inferred ? ' wb-axis-node--inferred' : ''}${node.source === 'auto' || node.source === 'ai' ? ' wb-axis-node--auto' : ''}`,
+                        'data-selected': selected ? 'true' : 'false',
+                        style: { left: `${node.percent}%`, top: `${10 + node.offset * 42}px` },
+                        title: `${node.time || '时间未定'} · ${node.title}${node.inferred ? '（推断）' : ''}`,
+                        onClick: () => selectCharacter(character.id),
+                      },
+                      h('i'),
+                      h('span', null, node.title)))));
+                })),
+                unknownEvents.length || unknownCharacters.length
+                  ? h('div', { className: 'wb-axis-unknown' },
+                    h('h4', null, '时间未定'),
+                    h('div', { className: 'wb-chips' },
+                      unknownEvents.map((node) => h(Chip, { key: node.key, onClick: () => selectEvent(node.eventId) }, `事件 · ${node.title}`)),
+                      unknownCharacters.flatMap((lane) => lane.nodes.filter((node) => node.percent === null).map((node) => h(Chip, {
+                        key: node.key,
+                        onClick: () => selectCharacter(lane.character.id),
+                      }, `${lane.character.name} · ${node.title}`)))))
+                  : null),
+          h('div', { className: 'wb-axis-detail', ref: detailRef },
+            selectedEvent
+              ? h(React.Fragment, null,
+                h('div', { className: 'wb-axis-detail-head' },
+                  h('div', null,
+                    h('div', { className: 'wb-eyebrow' }, '重大事件'),
+                    h('h3', null, selectedEvent.title),
+                    h('span', { className: 'wb-hint' }, selectedEvent.time || '时间未定')),
+                  h('span', { className: 'wb-spacer' })),
+                selectedEvent.description ? h('p', { className: 'wb-axis-desc' }, selectedEvent.description) : null,
+                selectedEvent.impact ? h('div', { className: 'wb-impact' }, h('b', null, '影响 '), selectedEvent.impact) : null,
+                h('h4', { className: 'wb-axis-detail-title' }, '参与者'),
+                participantsOf(selectedEvent.id).length
+                  ? h('div', { className: 'wb-chips' }, participantsOf(selectedEvent.id).map((character) => h(Chip, {
+                    key: character.id,
+                    onClick: () => selectCharacter(character.id),
+                  }, character.name)))
+                  : h('div', { className: 'wb-hint' }, '还没有角色关联到这个事件。可以在角色编辑器里勾选参与事件，或让 AI 整合时间轴。'))
+              : selectedCharacter
+                ? h(React.Fragment, null,
+                  h('div', { className: 'wb-axis-detail-head' },
+                    h('div', { className: 'wb-char-avatar wb-char-avatar--md' },
+                      charImages?.[selectedCharacter.id] ? h('img', { src: charImages[selectedCharacter.id], alt: selectedCharacter.name }) : h('span', null, characterInitial(selectedCharacter.name))),
+                    h('div', { className: 'wb-axis-detail-main' },
+                      h('div', { className: 'wb-eyebrow' }, '重要角色'),
+                      h('h3', null, selectedCharacter.name),
+                      h('span', { className: 'wb-hint' }, `${selectedCharacter.role || '角色'} · ${selectedCharacter.identity || '身份未填写'}${selectedCharacter.nonHuman || selectedCharacter.species ? ` · 物种 ${selectedCharacter.species || '未填写'}` : ''}${characterIsNpc(selectedCharacter) ? ' · 剧情 NPC' : ''}`)),
+                    h('div', { className: 'wb-inline' }, h(Btn, { size: 'sm', onClick: () => openCharacter(selectedCharacter) }, '编辑角色'))),
+                  selectedCharacter.description ? h('p', { className: 'wb-axis-desc' }, selectedCharacter.description) : null,
+                  h('h4', { className: 'wb-axis-detail-title' }, '角色关系'),
+                  relationsOf(selectedCharacter).length
+                    ? h('div', { className: 'wb-relation-grid' },
+                      relationsOf(selectedCharacter).map((relation) => {
+                        const shared = world.events.filter((event) => model.participation.get(selectedCharacter.id)?.has(event.id) && model.participation.get(relation.target.id)?.has(event.id));
+                        return h('button', {
+                          key: relation.id,
+                          type: 'button',
+                          className: 'wb-relation-card',
+                          onClick: () => selectCharacter(relation.target.id),
+                        },
+                        h('div', { className: 'wb-char-avatar wb-char-avatar--sm' },
+                          charImages?.[relation.target.id] ? h('img', { src: charImages[relation.target.id], alt: relation.target.name }) : h('span', null, characterInitial(relation.target.name))),
+                        h('div', { className: 'wb-relation-main' },
+                          h('div', { className: 'wb-relation-name' }, relation.target.name, h('span', { className: 'wb-tag' }, relation.type)),
+                          h('div', { className: 'wb-hint' }, `${relation.target.identity || '身份未填写'}${relation.note ? ` · ${relation.note}` : ''}`),
+                          shared.length ? h('div', { className: 'wb-hint' }, `共同事件：${shared.map((event) => event.title).join('、')}`) : null));
+                      }))
+                    : h('div', { className: 'wb-hint' }, '还没有角色关系。在角色编辑器里选择另一个角色即可自动建立关系。'),
+                  h('h4', { className: 'wb-axis-detail-title' }, '参与事件'),
+                  eventsOf(selectedCharacter.id).length
+                    ? h('div', { className: 'wb-chips' }, eventsOf(selectedCharacter.id).map((event) => h(Chip, {
+                      key: event.id,
+                      onClick: () => selectEvent(event.id),
+                    }, `${event.time || '时间未定'} · ${event.title}`)))
+                    : h('div', { className: 'wb-hint' }, '还没有关联事件。可以手动勾选，或点「从现有信息整合」。'),
+                  h('h4', { className: 'wb-axis-detail-title' }, '角色时间线'),
+                  (selectedCharacter.timeline || []).length
+                    ? h('div', { className: 'wb-axis-points' }, selectedCharacter.timeline.map((point) => h('div', { key: point.id, className: 'wb-axis-point' },
+                      h('span', { className: 'wb-axis-point-time' }, point.time || '时间未定'),
+                      h('b', null, point.title),
+                      point.description ? h('span', { className: 'wb-hint' }, point.description) : null,
+                      point.eventId ? h(Chip, { onClick: () => selectEvent(point.eventId) }, '打开事件') : null)))
+                    : h('div', { className: 'wb-hint' }, '还没有角色时间点。'))
+                : h('div', { className: 'wb-axis-detail-empty' },
+                  h('div', { className: 'wb-empty-glyph' }, '⌁'),
+                  h('b', null, '点击一个事件节点或角色泳道'),
+                  h('p', null, '这里会自动显示事件参与者、角色关系、共同事件与角色时间线。')))));
+    }
+
     /* ------------------------------------------------------------ AI 助手 */
 
     function AiPanel({ world, aiInput, setAiInput, onSend, pending, onCancel, onGenerate, onClearChat }) {
@@ -1666,7 +2538,7 @@ window.__ModuleLoader__.load({
       };
       return h(Modal, {
         title: 'AI 生成世界观',
-        description: '可以只给一句想法。模型会补齐世界类型、时代、时间线、重大事件、主要构成、基本设定和地图说明。',
+        description: '可以只给一句想法。模型会补齐世界类型、时代、时间线、重大事件、重要角色、主要构成、基本设定和地图说明。',
         onClose,
         wide: true,
         footer: h(React.Fragment, null,
@@ -1748,7 +2620,7 @@ window.__ModuleLoader__.load({
       };
       return h(Modal, {
         title: '导入世界观资料',
-        description: '支持 JSON、Markdown、TXT、YAML、表格或散文。AI 会识别里面的类型、时代、事件、势力与规则，整理成统一格式；导入后仍可逐项修改。',
+        description: '支持 JSON、Markdown、TXT、YAML、表格或散文。AI 会识别类型、时代、事件、势力、规则与重要角色，整理成统一格式；导入后仍可逐项修改。',
         onClose,
         wide: true,
         footer: h(React.Fragment, null,
@@ -1812,7 +2684,7 @@ window.__ModuleLoader__.load({
       };
       return h(Modal, {
         title: '导出世界观',
-        description: '纯文本适合直接阅读与投喂；Markdown 适合放进笔记；JSON 是完整结构化数据，可再次导入。',
+        description: '纯文本适合直接阅读与投喂；Markdown 适合放进笔记；JSON 是完整结构化数据（含角色与关系，不含角色图二进制），可再次导入。',
         onClose,
         wide: true,
         footer: h(React.Fragment, null,
